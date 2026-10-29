@@ -1,7 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { errorMessage } from '../../../core/api.service';
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_STATUSES, PAYMENT_STATUS_LABELS } from '../../../core/labels';
 import type { OrderStatus, Paged } from '../../../core/models';
@@ -23,7 +23,7 @@ interface Filters {
 @Component({
   selector: 'app-admin-orders',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, UahPipe, DatePipe, Pager],
+  imports: [FormsModule, Icon, UahPipe, DatePipe, Pager],
   template: `
     <div class="adm-page">
       <div class="adm-page-head">

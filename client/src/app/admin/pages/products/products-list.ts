@@ -67,7 +67,7 @@ interface Filters {
           <button class="btn btn-ghost btn-xs" (click)="bulk('unfeature')">Прибрати з головної</button>
           <button class="btn btn-ghost btn-xs danger" (click)="bulk('delete')">Видалити</button>
           <span class="spacer"></span>
-          <button class="btn btn-ghost btn-xs" (click)="selected.set(new Set())">Скасувати</button>
+          <button class="btn btn-ghost btn-xs" (click)="clearSelection()">Скасувати</button>
         </div>
       }
 
@@ -160,6 +160,10 @@ export class ProductsListPage {
   });
   protected readonly Set = Set;
   private searchTimer?: ReturnType<typeof setTimeout>;
+
+  clearSelection() {
+    this.selected.set(new Set());
+  }
 
   constructor() {
     this.api.get<Category[]>('/categories').subscribe((c) => this.categories.set(flattenCategories(c)));
