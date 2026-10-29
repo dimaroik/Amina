@@ -15,7 +15,7 @@ import { UahPipe } from './uah.pipe';
   imports: [RouterLink, Icon, UahPipe],
   template: `
     @let p = product();
-    <article class="card" [class.sold-out]="!p.in_stock">
+    <article class="pcard" [class.sold-out]="!p.in_stock">
       <div class="frame">
       <a class="media" [routerLink]="['/product', p.slug]" [attr.aria-label]="p.name">
         @if (p.images[0]) {
@@ -63,13 +63,13 @@ import { UahPipe } from './uah.pipe';
     </article>
   `,
   styles: `
-    .card { position: relative; }
+    .pcard { position: relative; }
     .media { position: relative; display: block; aspect-ratio: 3 / 4; overflow: hidden; background: var(--surface-2); }
     .img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .6s var(--ease), transform 1.2s var(--ease); }
     .placeholder { background: var(--surface-3); }
     .alt { opacity: 0; }
-    .card:hover .alt { opacity: 1; }
-    .card:hover .img { transform: scale(1.035); }
+    .pcard:hover .alt { opacity: 1; }
+    .pcard:hover .img { transform: scale(1.035); }
     .sold-out .img { filter: grayscale(.35); opacity: .8; }
     .tags { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
     .wish { position: absolute; top: 6px; right: 6px; width: 38px; height: 38px; border: 0; background: transparent; display: grid; place-items: center; color: var(--ink); border-radius: 50%; transition: transform .2s var(--ease), background .2s; }
@@ -80,7 +80,7 @@ import { UahPipe } from './uah.pipe';
     .quick { display: none; }
     @media (hover: hover) and (min-width: 900px) {
       .quick { display: block; position: absolute; left: 10px; right: 10px; bottom: 10px; transform: translateY(8px); opacity: 0; transition: all .35s var(--ease); background: rgba(250,248,245,.94); backdrop-filter: blur(6px); padding: 10px 12px; pointer-events: none; }
-      .card:hover .quick { opacity: 1; transform: none; pointer-events: auto; }
+      .pcard:hover .quick { opacity: 1; transform: none; pointer-events: auto; }
     }
     .quick-label { display: block; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
     .sizes { display: flex; flex-wrap: wrap; gap: 4px; }
