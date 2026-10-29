@@ -129,7 +129,8 @@
 .adm-sticky-bar { position: sticky; bottom: 0; z-index: 20; margin: 20px -16px -64px; padding: 12px 16px; background: rgba(247,245,241,.92); backdrop-filter: blur(8px); border-top: 1px solid var(--line); display: flex; gap: 10px; justify-content: flex-end; align-items: center;
   @include up($md) { margin: 20px -32px -80px; padding: 12px 32px; }
 }
-.adm-dropzone { border: 1.5px dashed var(--line-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; transition: all .2s; background: #fcfbf9;
+adm-image-upload { display: block; }
+.adm-dropzone { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1.5px dashed var(--line-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; transition: all .2s; background: #fcfbf9;
   &:hover, &.over { border-color: var(--ink); color: var(--ink); background: var(--surface-2); }
   app-icon { margin: 0 auto 6px; }
 }

@@ -51,3 +51,11 @@
 .sum-row.sale { color: var(--sale); }
 .sum-row.total { font-size: 17px; font-weight: 600; padding-top: 12px; border-top: 1px solid var(--line); }
 .info { display: flex; flex-direction: column; gap: 18px; p { margin: 4px 0 0; font-size: 14px; } }
+/* Narrow phones: only the current step keeps its label, others become a tooltip */
+@media (max-width: 599px) {
+  .steps .lbl { font-size: 10px; letter-spacing: 0; overflow-wrap: anywhere; }
+  .steps li:not(.current) .lbl { visibility: hidden; }
+  .steps li.current .lbl { white-space: nowrap; }
+  .steps li:first-child.current .lbl { justify-self: start; }
+  .steps li:last-child.current .lbl { justify-self: end; }
+}

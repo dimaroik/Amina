@@ -93,7 +93,7 @@ p { margin: 0 0 1em; }
 
 /* ---------- layout ---------- */
 .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--gutter); }
-.section { padding: 56px 0; @include up($md) { padding: 96px 0; } }
+.section { padding-top: 56px; padding-bottom: 56px; @include up($md) { padding-top: 96px; padding-bottom: 96px; } }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .row { display: flex; align-items: center; gap: 12px; }
 .spacer { flex: 1; }
