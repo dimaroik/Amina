@@ -1,0 +1,166 @@
+<section class="container page">
+  <div class="top">
+    <a class="link small upper" routerLink="/cart"><app-icon name="arrow-left" [size]="14" /> До кошика</a>
+    <h1 class="h1">Оформлення замовлення</h1>
+  </div>
+
+  @if (!cart.items().length) {
+    <div class="empty-state">
+      <app-icon name="bag" [size]="40" />
+      <p class="h3">Кошик порожній</p>
+      <p>Додайте товари, щоб оформити замовлення.</p>
+      <a class="btn" routerLink="/catalog">До каталогу</a>
+    </div>
+  } @else {
+    @if (notes().length) {
+      <div class="notes"><app-icon name="info" [size]="18" /><div>@for (n of notes(); track n) { <p>{{ n }}</p> }</div></div>
+    }
+    <form class="layout" (ngSubmit)="submit()" novalidate>
+      <div class="form">
+        <!-- 1 CONTACTS -->
+        <div class="block">
+          <h2 class="block-title"><span class="num">1</span> Контактні дані</h2>
+          <div class="form-grid">
+            <div class="field full">
+              <label class="label" for="name">Ім’я та прізвище *</label>
+              <input id="name" class="input" name="name" autocomplete="name" [class.invalid]="submitted() && errors()['name']" [ngModel]="name()" (ngModelChange)="name.set($event)" placeholder="Олена Коваленко" />
+              @if (submitted() && errors()['name']) { <span class="field-error err">{{ errors()['name'] }}</span> }
+            </div>
+            <div class="field">
+              <label class="label" for="phone">Телефон *</label>
+              <input id="phone" class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" [class.invalid]="submitted() && errors()['phone']" [ngModel]="phone()" (ngModelChange)="setPhone($event)" placeholder="+380 __ ___ __ __" />
+              @if (submitted() && errors()['phone']) { <span class="field-error err">{{ errors()['phone'] }}</span> }
+            </div>
+            <div class="field">
+              <label class="label" for="email">Email</label>
+              <input id="email" class="input" name="email" type="email" autocomplete="email" [class.invalid]="submitted() && errors()['email']" [ngModel]="email()" (ngModelChange)="email.set($event)" placeholder="для підтвердження замовлення" />
+              @if (submitted() && errors()['email']) { <span class="field-error err">{{ errors()['email'] }}</span> }
+            </div>
+            <div class="field full">
+              <span class="label">Як з вами зв’язатися?</span>
+              <div class="chips">
+                @for (c of channels; track c.id) {
+                  <button type="button" class="chip" [class.active]="channel() === c.id" (click)="channel.set(c.id)"><app-icon [name]="c.icon" [size]="16" /> {{ c.label }}</button>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 DELIVERY -->
+        <div class="block">
+          <h2 class="block-title"><span class="num">2</span> Доставка</h2>
+          <div class="options">
+            @for (d of config()?.delivery ?? []; track d.id) {
+              <button type="button" class="option" [class.on]="deliveryId() === d.id" (click)="deliveryId.set(d.id)">
+                <span class="radio"></span>
+                <span class="opt-text"><b>{{ d.name }}</b><span class="small muted">{{ d.description }}</span></span>
+                <span class="opt-price small">
+                  @if (d.price > 0) { {{ d.price | uah }} } @else if (d.type === 'pickup') { Безкоштовно } @else { за тарифом }
+                  @if (d.free_from) { <span class="tiny muted">безкоштовно від {{ d.free_from | uah }}</span> }
+                </span>
+              </button>
+            } @empty {
+              <div class="skeleton" style="height: 70px"></div><div class="skeleton" style="height: 70px"></div>
+            }
+          </div>
+          @if (submitted() && errors()['delivery']) { <span class="field-error err">{{ errors()['delivery'] }}</span> }
+
+          @if (delivery(); as d) {
+            @if (d.type !== 'pickup') {
+              <div class="form-grid addr">
+                <div class="field ac" [class.full]="d.type !== 'np_warehouse'">
+                  <label class="label" for="city">Місто *</label>
+                  <input id="city" class="input" name="city" autocomplete="off" [class.invalid]="submitted() && errors()['city']" [ngModel]="city()" (ngModelChange)="onCity($event)" (blur)="closeLists()" placeholder="Почніть вводити назву" />
+                  @if (cityOpen() && cities().length) {
+                    <ul class="ac-list">
+                      @for (c of cities(); track c.ref) { <li (mousedown)="pickCity(c)"><b>{{ c.name }}</b> <span class="muted small">{{ c.area }} обл.</span></li> }
+                    </ul>
+                  }
+                  @if (submitted() && errors()['city']) { <span class="field-error err">{{ errors()['city'] }}</span> }
+                </div>
+                @if (d.type === 'np_warehouse') {
+                  <div class="field ac">
+                    <label class="label" for="branch">Відділення / поштомат *</label>
+                    <input id="branch" class="input" name="branch" autocomplete="off" [class.invalid]="submitted() && errors()['branch']" [ngModel]="branch()" (ngModelChange)="onBranch($event)" (focus)="openWarehouses()" (blur)="closeLists()" [placeholder]="np() ? (cityRef() ? 'Номер або адреса' : 'Спершу оберіть місто') : 'Напр.: Відділення №12'" />
+                    @if (whOpen() && warehouses().length) {
+                      <ul class="ac-list">
+                        @for (w of warehouses(); track w.ref) { <li (mousedown)="pickWarehouse(w)">{{ w.name }}</li> }
+                      </ul>
+                    }
+                    @if (submitted() && errors()['branch']) { <span class="field-error err">{{ errors()['branch'] }}</span> }
+                  </div>
+                } @else {
+                  <div class="field full">
+                    <label class="label" for="address">Адреса *</label>
+                    <input id="address" class="input" name="address" autocomplete="street-address" [class.invalid]="submitted() && errors()['address']" [ngModel]="address()" (ngModelChange)="address.set($event)" placeholder="Вулиця, будинок, квартира" />
+                    @if (submitted() && errors()['address']) { <span class="field-error err">{{ errors()['address'] }}</span> }
+                  </div>
+                }
+              </div>
+            } @else {
+              <p class="hint pickup"><app-icon name="pin" [size]="16" /> Ми повідомимо, коли замовлення буде готове до видачі.</p>
+            }
+          }
+        </div>
+
+        <!-- 3 PAYMENT -->
+        <div class="block">
+          <h2 class="block-title"><span class="num">3</span> Оплата</h2>
+          <div class="options">
+            @for (p of config()?.payments ?? []; track p.id) {
+              <button type="button" class="option" [class.on]="payment() === p.code" (click)="payment.set(p.code)">
+                <span class="radio"></span>
+                <span class="opt-text"><b>{{ p.name }}</b><span class="small muted">{{ p.description }}</span></span>
+                <app-icon class="opt-icon" [name]="payIcons[p.code]" [size]="22" />
+              </button>
+            }
+          </div>
+          @if (payment() === 'mono_jar') { <p class="hint"><app-icon name="qr" [size]="16" /> Після оформлення ви побачите QR-код для оплати в Monobank.</p> }
+          @if (submitted() && errors()['payment']) { <span class="field-error err">{{ errors()['payment'] }}</span> }
+        </div>
+
+        <div class="block">
+          <div class="field">
+            <label class="label" for="comment">Коментар до замовлення</label>
+            <textarea id="comment" class="textarea" name="comment" rows="3" [ngModel]="comment()" (ngModelChange)="comment.set($event)" placeholder="Побажання щодо доставки чи упаковки"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUMMARY -->
+      <aside class="summary">
+        <h2 class="h3">Ваше замовлення</h2>
+        <ul class="lines">
+          @for (i of cart.items(); track i.variantId) {
+            <li>
+              <span class="th">@if (i.image) { <img [src]="i.image" [alt]="i.name" /> }<span class="q">{{ i.quantity }}</span></span>
+              <span class="ln"><span>{{ i.name }}</span><span class="tiny muted">{{ i.color }}@if (i.size) { · {{ i.size }} }</span></span>
+              <span class="small">{{ i.price * i.quantity | uah }}</span>
+            </li>
+          }
+        </ul>
+
+        @if (promo(); as pr) {
+          <div class="promo-on"><app-icon name="tag" [size]="16" /> <b>{{ pr.code }}</b> <span class="spacer"></span> <button type="button" class="link small" (click)="removePromo()">Прибрати</button></div>
+        } @else if (promoOpen()) {
+          <div class="promo">
+            <input class="input" name="promo" [ngModel]="promoInput()" (ngModelChange)="promoInput.set($event)" placeholder="Промокод" (keydown.enter)="$event.preventDefault(); applyPromo()" />
+            <button type="button" class="btn btn-outline btn-sm" (click)="applyPromo()" [disabled]="promoBusy() || !promoInput()">Застосувати</button>
+          </div>
+        } @else {
+          <button type="button" class="promo-toggle small" (click)="promoOpen.set(true)"><app-icon name="tag" [size]="16" /> Маю промокод</button>
+        }
+
+        <div class="sum-row"><span>Товари</span><span>{{ cart.subtotal() | uah }}</span></div>
+        @if (discount() > 0) { <div class="sum-row sale"><span>Знижка</span><span>−{{ discount() | uah }}</span></div> }
+        <div class="sum-row"><span>Доставка</span><span>@if (deliveryLabel(); as l) { {{ l }} } @else { {{ deliveryCost() | uah }} }</span></div>
+        <div class="sum-row total"><span>До сплати</span><span>{{ total() | uah }}</span></div>
+        <button class="btn btn-block" type="submit" [disabled]="sending() || !config()">
+          @if (sending()) { <span class="spinner"></span> Оформлюємо… } @else { Підтвердити замовлення }
+        </button>
+        <p class="tiny muted terms">Натискаючи кнопку, ви погоджуєтесь з умовами доставки та повернення.</p>
+      </aside>
+    </form>
+  }
+</section>
