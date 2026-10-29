@@ -17,7 +17,7 @@ async function api(method: string, body: Record<string, unknown>): Promise<any> 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(25_000),
   });
   const json = (await res.json()) as { ok: boolean; description?: string; result?: unknown };
   if (!json.ok) throw new Error(`Telegram: ${json.description}`);
@@ -45,6 +45,11 @@ export async function setupTelegramWebhook(): Promise<void> {
     allowed_updates: ['message'],
   });
   console.log('[telegram] webhook configured');
+}
+
+/** Telegram's view of the webhook (pending updates, last delivery error) — shown in the admin panel. */
+export async function telegramWebhookInfo(): Promise<{ url: string; pending_update_count: number; last_error_message?: string; last_error_date?: number }> {
+  return api('getWebhookInfo', {});
 }
 
 export function telegramDeepLink(payload: string): string {

@@ -8,7 +8,7 @@ async function api(endpoint: string, body: Record<string, unknown>): Promise<any
     method: 'POST',
     headers: { 'X-Viber-Auth-Token': config.viber.token, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(25_000),
   });
   const json = (await res.json()) as { status: number; status_message: string };
   if (json.status !== 0) throw new Error(`Viber: ${json.status_message}`);

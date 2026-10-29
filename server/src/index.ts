@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,9 @@ import { publicRouter } from './routes/public.js';
 import { setupTelegramWebhook } from './services/notify/telegram.js';
 import { setupViberWebhook } from './services/notify/viber.js';
 import { errorHandler, HttpError } from './utils/errors.js';
+
+// Some hosts (Render) have no working IPv6 egress; trying IPv6 first makes calls to Telegram/Viber hang
+dns.setDefaultResultOrder('ipv4first');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.resolve(here, '../../client/dist/client/browser');
@@ -73,8 +77,22 @@ async function main() {
   app.listen(config.port, () => {
     console.log(`Amina API listening on :${config.port} (${config.publicUrl})`);
   });
-  setupTelegramWebhook().catch((err) => console.error('[telegram] webhook setup failed', err.message));
-  setupViberWebhook().catch((err) => console.error('[viber] webhook setup failed', err.message));
+  void withRetries('telegram', setupTelegramWebhook);
+  void withRetries('viber', setupViberWebhook);
+}
+
+/** Webhook registration runs in the background and retries, so a slow external API never blocks startup. */
+async function withRetries(name: string, fn: () => Promise<void>, attempts = 5): Promise<void> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await fn();
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? `${err.message}${err.cause ? ` (${String((err.cause as Error).message ?? err.cause)})` : ''}` : String(err);
+      console.error(`[${name}] webhook setup failed (attempt ${i}/${attempts}): ${message}`);
+      if (i < attempts) await new Promise((r) => setTimeout(r, i * 10_000));
+    }
+  }
 }
 
 main().catch((err) => {
