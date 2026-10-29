@@ -11,7 +11,7 @@ import { monoAcquiringEnabled } from '../../services/monobank.js';
 import { novaPoshtaEnabled } from '../../services/novaposhta.js';
 import { getSettings, updateSettings } from '../../services/settings.js';
 import { sendEmail } from '../../services/notify/email.js';
-import { sendTelegram } from '../../services/notify/telegram.js';
+import { sendTelegram, setupTelegramWebhook, telegramWebhookInfo } from '../../services/notify/telegram.js';
 import { badRequest, notFound } from '../../utils/errors.js';
 
 export const adminMiscRouter = Router();
@@ -246,6 +246,17 @@ adminMiscRouter.post('/settings/test-notification', async (req, res) => {
     }
   }
   res.json(results);
+});
+
+/** Re-registers the Telegram webhook and reports its state (useful when the bot does not answer). */
+adminMiscRouter.post('/integrations/telegram/webhook', async (_req, res) => {
+  if (!telegramEnabled()) throw badRequest('TELEGRAM_BOT_TOKEN не налаштовано');
+  try {
+    await setupTelegramWebhook();
+    res.json({ ok: true, info: await telegramWebhookInfo() });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // ---------- admins ----------
