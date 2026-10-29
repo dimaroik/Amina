@@ -3,14 +3,14 @@ import { config } from '../config.js';
 import { one, query } from '../db/pool.js';
 import { orderStatusLabel, type OrderStatus } from '../services/labels.js';
 import { addHistory } from '../services/orders.js';
-import { escapeHtml, sendTelegram, telegramEnabled } from '../services/notify/telegram.js';
+import { escapeHtml, sendTelegram, telegramEnabled, telegramWebhookPath } from '../services/notify/telegram.js';
 import { verifyViberSignature, viberEnabled } from '../services/notify/viber.js';
 
 export const messengersRouter = Router();
 
 messengersRouter.post('/webhooks/telegram/:secret', express.json(), async (req, res) => {
   res.json({ ok: true });
-  if (!telegramEnabled() || req.params.secret !== config.telegram.webhookSecret) return;
+  if (!telegramEnabled() || req.params.secret !== telegramWebhookPath()) return;
   const msg = req.body?.message;
   const chatId = msg?.chat?.id ? String(msg.chat.id) : '';
   const text: string = msg?.text ?? '';
