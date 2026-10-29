@@ -1,0 +1,113 @@
+@let ord = o();
+<!-- PROGRESS -->
+<div class="card progress-card">
+  <div class="status-row">
+    <span class="badge" [class]="'badge badge-' + ord.status">{{ statusLabels[ord.status] }}</span>
+    <span class="badge" [class]="'badge badge-' + ord.payment_status">{{ paymentLabels[ord.payment_status] }}</span>
+    <span class="spacer"></span>
+    <span class="small muted">від {{ ord.created_at | date: 'd MMMM y, HH:mm' }}</span>
+  </div>
+  @if (stopped()) {
+    <p class="stopped"><app-icon name="info" [size]="18" /> Замовлення {{ ord.status === 'cancelled' ? 'скасовано' : 'оформлено на повернення' }}. Якщо маєте питання — напишіть нам.</p>
+  } @else {
+    <ol class="steps">
+      @for (s of steps; track s; let i = $index) {
+        <li [class.done]="i < stepIndex()" [class.current]="i === stepIndex()">
+          <span class="dot">@if (i < stepIndex()) { <app-icon name="check" [size]="12" [stroke]="2.2" /> }</span>
+          <span class="lbl">{{ statusLabels[s] }}</span>
+        </li>
+      }
+    </ol>
+  }
+  @if (ord.tracking_number) {
+    <div class="ttn">
+      <app-icon name="truck" [size]="20" />
+      <div><span class="tiny muted upper">Номер ТТН</span><b>{{ ord.tracking_number }}</b></div>
+      <span class="spacer"></span>
+      <button class="icon-btn" (click)="copy(ord.tracking_number, 'ТТН скопійовано')" aria-label="Скопіювати"><app-icon name="copy" [size]="18" /></button>
+      <a class="btn btn-outline btn-sm" [href]="trackUrl()" target="_blank" rel="noopener">Відстежити</a>
+    </div>
+  }
+</div>
+
+<!-- PAYMENT -->
+@if (showPayment()) {
+  <div class="card pay">
+    @if (ord.payment_method === 'mono_jar' && data().payment.jarUrl) {
+      <div class="pay-grid">
+        <div class="qr-box">
+          @if (qr()) { <img [src]="qrDataUrl()" alt="QR-код для оплати в Monobank" /> } @else { <div class="skeleton qr-sk"></div> }
+          <span class="tiny muted">Скануйте камерою телефону</span>
+        </div>
+        <div class="pay-text">
+          <span class="eyebrow">Оплата через Monobank</span>
+          <p class="h2 amount">{{ ord.total | uah }}</p>
+          <p class="muted small">Відскануйте QR-код або натисніть кнопку — сума та коментар підставляться автоматично. Після оплати ми підтвердимо замовлення.</p>
+          <div class="copy-row"><span class="small">Коментар: <b>{{ purpose() }}</b></span><button class="icon-btn" (click)="copy(purpose())" aria-label="Скопіювати"><app-icon name="copy" [size]="16" /></button></div>
+          <a class="btn mono" [href]="data().payment.jarUrl" target="_blank" rel="noopener">Відкрити Monobank <app-icon name="external" [size]="16" /></a>
+        </div>
+      </div>
+    } @else if (ord.payment_method === 'iban' && data().payment.iban) {
+      <span class="eyebrow">Реквізити для оплати</span>
+      <p class="h2 amount">{{ ord.total | uah }}</p>
+      <dl class="req">
+        @for (r of [['Отримувач', data().payment.iban!.recipient], ['IBAN', data().payment.iban!.iban], ['ЄДРПОУ / ІПН', data().payment.iban!.edrpou], ['Сума', '' + ord.total], ['Призначення', data().payment.iban!.purpose]]; track r[0]) {
+          @if (r[1]) {
+            <div class="req-row"><dt>{{ r[0] }}</dt><dd>{{ r[1] }}</dd><button class="icon-btn" (click)="copy(r[1], r[0] + ' скопійовано')" [attr.aria-label]="'Скопіювати ' + r[0]"><app-icon name="copy" [size]="16" /></button></div>
+          }
+        }
+      </dl>
+      <p class="small muted">Після надходження коштів статус оплати зміниться автоматично або менеджер підтвердить його вручну.</p>
+    } @else if (ord.payment_method === 'mono_acquiring') {
+      <div class="row-pay">
+        <div><span class="eyebrow">Оплата карткою</span><p class="h2 amount">{{ ord.total | uah }}</p></div>
+        @if (data().payment.payUrl) {
+          <a class="btn" [href]="data().payment.payUrl">Оплатити карткою <app-icon name="card" [size]="18" /></a>
+        } @else {
+          <p class="small muted">Посилання на оплату буде надіслано менеджером.</p>
+        }
+      </div>
+      <button class="link small refresh" (click)="refresh.emit()"><app-icon name="refresh" [size]="14" /> Я вже оплатила — оновити статус</button>
+    }
+  </div>
+} @else if (ord.payment_status === 'paid') {
+  <div class="card paid"><app-icon name="check" [size]="20" /> Оплату отримано. Дякуємо!</div>
+} @else if (ord.payment_method === 'cod' && !stopped()) {
+  <div class="card paid neutral"><app-icon name="truck" [size]="20" /> Оплата при отриманні: {{ ord.total | uah }} + комісія перевізника.</div>
+}
+
+<!-- MESSENGERS -->
+@if ((data().links.telegram && !ord.telegram_linked) || (data().links.viber && !ord.viber_linked)) {
+  <div class="card notify">
+    <div><b>Отримуйте статус у месенджері</b><p class="small muted">Повідомимо, щойно замовлення буде відправлено.</p></div>
+    <div class="notify-btns">
+      @if (data().links.telegram && !ord.telegram_linked) { <a class="btn btn-outline btn-sm" [href]="data().links.telegram" target="_blank" rel="noopener"><app-icon name="telegram" [size]="16" /> Telegram</a> }
+      @if (data().links.viber && !ord.viber_linked) { <a class="btn btn-outline btn-sm" [href]="data().links.viber"><app-icon name="viber" [size]="16" /> Viber</a> }
+    </div>
+  </div>
+}
+
+<!-- DETAILS -->
+<div class="details">
+  <div class="card items">
+    <h3 class="h3">Товари</h3>
+    @for (i of ord.items; track $index) {
+      <div class="it">
+        <span class="th">@if (i.image_url) { <img [src]="i.image_url" [alt]="i.name" /> }</span>
+        <span class="ln"><span>{{ i.name }}</span><span class="tiny muted">{{ i.color }}@if (i.size) { · {{ i.size }} } · {{ i.quantity }} шт.</span></span>
+        <span class="small">{{ i.price * i.quantity | uah }}</span>
+      </div>
+    }
+    <div class="sum-row"><span>Товари</span><span>{{ ord.subtotal | uah }}</span></div>
+    @if (ord.discount > 0) { <div class="sum-row sale"><span>Знижка @if (ord.promo_code) { ({{ ord.promo_code }}) }</span><span>−{{ ord.discount | uah }}</span></div> }
+    <div class="sum-row"><span>Доставка</span><span>@if (ord.delivery_cost > 0) { {{ ord.delivery_cost | uah }} } @else { за тарифами перевізника }</span></div>
+    <div class="sum-row total"><span>Разом</span><span>{{ ord.total | uah }}</span></div>
+  </div>
+  <div class="card info">
+    <div><span class="tiny muted upper">Отримувач</span><p>{{ ord.customer_name }}<br />{{ ord.customer_phone }}@if (ord.customer_email) {<br />{{ ord.customer_email }}}</p></div>
+    <div><span class="tiny muted upper">Доставка</span><p>{{ ord.delivery_name }}@if (deliveryLine()) {<br />{{ deliveryLine() }}}</p></div>
+    <div><span class="tiny muted upper">Оплата</span><p>{{ ord.payment_name }}</p></div>
+    @if (ord.comment) { <div><span class="tiny muted upper">Коментар</span><p>{{ ord.comment }}</p></div> }
+    <a class="link small" routerLink="/contacts">Потрібна допомога?</a>
+  </div>
+</div>

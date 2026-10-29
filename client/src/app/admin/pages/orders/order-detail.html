@@ -1,0 +1,294 @@
+@if (order(); as o) {
+  <div class="adm-page">
+    <div class="adm-no-print">
+      <a routerLink="/admin/orders" class="adm-back"><app-icon name="arrow-left" [size]="14" /> Усі замовлення</a>
+      <div class="adm-page-head">
+        <div>
+          <h1>{{ o.number }}</h1>
+          <div class="sub adm-row">
+            <span>{{ o.created_at | date: 'd MMMM y, HH:mm' }}</span>
+            <span class="badge" [class]="'badge badge-' + o.status">{{ statusLabels[o.status] }}</span>
+            <span class="badge" [class]="'badge badge-' + o.payment_status">{{ paymentLabels[o.payment_status] }}</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" (click)="print()"><app-icon name="print" [size]="15" /> Друк</button>
+          <button class="btn btn-ghost btn-sm danger-text" (click)="remove()"><app-icon name="trash" [size]="15" /> Видалити</button>
+        </div>
+      </div>
+
+      <div class="adm-split">
+        <div class="adm-stack">
+          <!-- status pipeline -->
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Статус замовлення</h2>
+              <label class="adm-switch small"><input type="checkbox" [checked]="notify()" (change)="notify.set(!notify())" /><span class="track"></span> Сповістити клієнта</label>
+            </div>
+            <div class="adm-card-body">
+              @if (o.status === 'cancelled' || o.status === 'returned') {
+                <div class="closed"><app-icon name="info" [size]="16" /> Замовлення {{ statusLabels[o.status].toLowerCase() }}. Товари повернуто на склад.</div>
+              } @else {
+                <ol class="stepper">
+                  @for (s of progress; track s; let i = $index) {
+                    <li [class.done]="i < stepIndex()" [class.current]="i === stepIndex()">
+                      <button (click)="setStatus(s)" [disabled]="busy()" [title]="'Встановити: ' + statusLabels[s]">
+                        <span class="dot">@if (i < stepIndex()) { <app-icon name="check" [size]="12" [stroke]="2.4" /> }</span>
+                        <span class="lbl">{{ statusLabels[s] }}</span>
+                      </button>
+                    </li>
+                  }
+                </ol>
+              }
+              <div class="status-actions">
+                <input class="input" placeholder="Коментар до зміни статусу (в історію)" [(ngModel)]="statusNote" />
+                <select class="select" [ngModel]="o.status" (ngModelChange)="setStatus($event)" [disabled]="busy()">
+                  @for (s of statuses; track s) { <option [value]="s">{{ statusLabels[s] }}</option> }
+                </select>
+                @if (nextStatus(); as n) {
+                  <button class="btn btn-sm" (click)="setStatus(n)" [disabled]="busy()">{{ statusLabels[n] }} <app-icon name="arrow-right" [size]="14" /></button>
+                }
+              </div>
+              @if (o.status !== 'cancelled' && o.status !== 'returned' && o.status !== 'completed') {
+                <button class="link-btn" (click)="cancelOrder()">Скасувати замовлення</button>
+              }
+            </div>
+          </section>
+
+          <!-- items -->
+          <section class="adm-card">
+            <div class="adm-card-head">
+              <h2>Товари ({{ o.items.length }})</h2>
+              @if (!editItems()) {
+                <button class="btn btn-ghost btn-xs" (click)="startEditItems()"><app-icon name="edit" [size]="13" /> Змінити</button>
+              }
+            </div>
+            @if (!editItems()) {
+              <ul class="items">
+                @for (it of o.items; track it.id) {
+                  <li>
+                    @if (it.image_url) { <img [src]="it.image_url" class="adm-thumb" alt="" /> } @else { <span class="adm-thumb"></span> }
+                    <div class="grow">
+                      @if (it.product_id) { <a [routerLink]="['/admin/products', it.product_id]" class="t">{{ it.name }}</a> } @else { <span class="t">{{ it.name }}</span> }
+                      <div class="adm-muted tiny">{{ it.size }}{{ it.color ? ' · ' + it.color : '' }}{{ it.sku ? ' · ' + it.sku : '' }}</div>
+                    </div>
+                    <div class="num">{{ it.quantity }} × {{ it.price | uah }}</div>
+                    <div class="num"><b>{{ it.price * it.quantity | uah }}</b></div>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <div class="adm-card-body">
+                @for (it of items(); track $index; let i = $index) {
+                  <div class="edit-row">
+                    @if (it.image_url) { <img [src]="it.image_url" class="adm-thumb-sm" alt="" /> }
+                    <div class="grow"><div class="t">{{ it.name }}</div><div class="adm-muted tiny">{{ it.size }} {{ it.color }}</div></div>
+                    <label class="mini"><span>Ціна</span><input class="input" type="number" min="0" [ngModel]="it.price" (ngModelChange)="updateItem(i, { price: $event })" /></label>
+                    <label class="mini qty"><span>К-сть</span><input class="input" type="number" min="1" [ngModel]="it.quantity" (ngModelChange)="updateItem(i, { quantity: $event })" /></label>
+                    <button class="icon-btn" (click)="removeItem(i)" aria-label="Прибрати"><app-icon name="trash" [size]="16" /></button>
+                  </div>
+                }
+                <div class="add-variant">
+                  <div class="search"><app-icon name="plus" [size]="16" />
+                    <input class="input" placeholder="Додати товар: назва або артикул" [ngModel]="variantQuery" (ngModelChange)="searchVariants($event)" />
+                  </div>
+                  @if (variantResults().length) {
+                    <ul class="results">
+                      @for (v of variantResults(); track v.id) {
+                        <li><button (click)="addVariant(v)" [disabled]="v.stock <= 0">
+                          @if (v.image) { <img [src]="v.image" class="adm-thumb-sm" alt="" /> }
+                          <span class="grow">{{ v.name }} <span class="adm-muted">· {{ v.size }} {{ v.color }}</span></span>
+                          <span class="adm-pill" [class.danger]="v.stock <= 0">{{ v.stock }} шт</span>
+                          <span class="num">{{ v.price | uah }}</span>
+                        </button></li>
+                      }
+                    </ul>
+                  }
+                </div>
+                <div class="adm-between" style="margin-top:14px">
+                  <span>Разом товарів: <b>{{ itemsTotal() | uah }}</b></span>
+                  <div class="adm-row">
+                    <button class="btn btn-ghost btn-sm" (click)="editItems.set(false)">Скасувати</button>
+                    <button class="btn btn-sm" (click)="saveItems()" [disabled]="busy()">Зберегти склад</button>
+                  </div>
+                </div>
+                <p class="adm-hint" style="margin-top:8px">Залишки на складі оновляться автоматично.</p>
+              </div>
+            }
+            <div class="totals">
+              <div><span>Товари</span><span>{{ o.subtotal | uah }}</span></div>
+              <div><span>Знижка @if (o.promo_code) { <span class="adm-pill">{{ o.promo_code }}</span> }</span>
+                <input class="input sm-input" type="number" min="0" [(ngModel)]="money.discount" /></div>
+              <div><span>Доставка</span><input class="input sm-input" type="number" min="0" [(ngModel)]="money.delivery_cost" /></div>
+              @if (money.discount !== o.discount || money.delivery_cost !== o.delivery_cost) {
+                <div class="adm-row" style="justify-content:flex-end"><button class="btn btn-sm" (click)="saveMoney()" [disabled]="busy()">Перерахувати</button></div>
+              }
+              <div class="grand"><span>Разом</span><span>{{ o.total | uah }}</span></div>
+            </div>
+          </section>
+
+          <!-- message -->
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Написати клієнту</h2></div>
+            <div class="adm-card-body">
+              <textarea class="textarea" rows="3" [(ngModel)]="message"></textarea>
+              <div class="msg-actions">
+                <button class="btn btn-sm" (click)="sendMessage()" [disabled]="busy() || !message.trim()"><app-icon name="send" [size]="14" /> Надіслати автоматично</button>
+                <a class="btn btn-ghost btn-sm" [href]="waLink()" target="_blank"><app-icon name="whatsapp" [size]="15" /> WhatsApp</a>
+                <a class="btn btn-ghost btn-sm" [href]="viberLink()"><app-icon name="viber" [size]="15" /> Viber</a>
+                <a class="btn btn-ghost btn-sm" [href]="tgLink()" target="_blank"><app-icon name="telegram" [size]="15" /> Telegram</a>
+              </div>
+              <p class="adm-hint">«Автоматично» — email{{ o.telegram_chat_id ? ', Telegram' : '' }}{{ o.viber_user_id ? ', Viber' : '' }} (якщо налаштовано). Кнопки месенджерів відкривають чат із готовим текстом.</p>
+            </div>
+          </section>
+
+          <!-- history -->
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Історія</h2></div>
+            <div class="adm-card-body">
+              <ol class="timeline">
+                @for (h of o.history ?? []; track h.id) {
+                  <li>
+                    <span class="ico"><app-icon [name]="historyIcons[h.action] || 'info'" [size]="13" /></span>
+                    <div>
+                      <div>{{ h.note || h.action }}</div>
+                      <div class="adm-muted tiny">{{ h.created_at | date: 'd MMM, HH:mm' }} · {{ h.author }}</div>
+                    </div>
+                  </li>
+                }
+              </ol>
+              @if (o.notifications?.length) {
+                <div class="adm-section-title" style="margin-top:18px">Сповіщення</div>
+                <ul class="adm-list notif">
+                  @for (n of o.notifications; track n.id) {
+                    <li>
+                      <span class="adm-dot" [class.on]="n.status === 'sent'" [class.warn]="n.status !== 'sent'"></span>
+                      <div class="grow">
+                        <div class="small">{{ n.channel }} → {{ n.recipient }}</div>
+                        @if (n.error) { <div class="tiny danger-text">{{ n.error }}</div> }
+                      </div>
+                      <span class="adm-muted tiny">{{ n.created_at | date: 'd.MM HH:mm' }}</span>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          </section>
+        </div>
+
+        <aside class="adm-stack">
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Клієнт</h2>
+              <button class="btn btn-ghost btn-xs" (click)="editCustomer.set(!editCustomer())">{{ editCustomer() ? 'Скасувати' : 'Змінити' }}</button>
+            </div>
+            <div class="adm-card-body">
+              @if (editCustomer()) {
+                <div class="adm-stack" style="gap:10px">
+                  <input class="input" [(ngModel)]="customer.customer_name" placeholder="Ім’я" />
+                  <input class="input" [(ngModel)]="customer.customer_phone" placeholder="Телефон" />
+                  <input class="input" [(ngModel)]="customer.customer_email" placeholder="Email" />
+                  <button class="btn btn-sm" (click)="saveCustomer()" [disabled]="busy()">Зберегти</button>
+                </div>
+              } @else {
+                <div class="cust-name">{{ o.customer_name }}</div>
+                <div class="adm-row tiny adm-muted">
+                  <a [href]="'tel:+' + phone()" class="link-plain">{{ o.customer_phone }}</a>
+                  <button class="icon-btn xs" (click)="copy(o.customer_phone)" title="Копіювати"><app-icon name="copy" [size]="13" /></button>
+                </div>
+                @if (o.customer_email) { <div class="small"><a [href]="'mailto:' + o.customer_email" class="link-plain">{{ o.customer_email }}</a></div> }
+                <div class="contact-pref">Зручний зв’язок: <b>{{ channelLabels[o.contact_channel] || o.contact_channel }}</b></div>
+                <div class="quick-contact">
+                  <a class="icon-btn" [href]="'tel:+' + phone()" title="Подзвонити"><app-icon name="phone" [size]="17" /></a>
+                  <a class="icon-btn" [href]="viberLink()" title="Viber"><app-icon name="viber" [size]="17" /></a>
+                  <a class="icon-btn" [href]="waLink()" target="_blank" title="WhatsApp"><app-icon name="whatsapp" [size]="17" /></a>
+                  <a class="icon-btn" [href]="tgLink()" target="_blank" title="Telegram"><app-icon name="telegram" [size]="17" /></a>
+                </div>
+                @if (o.customerStats; as cs) {
+                  <a class="stats" [routerLink]="['/admin/orders']" [queryParams]="{ q: o.customer_phone }">
+                    {{ cs.count }} замовл. · {{ cs.spent | uah }} <app-icon name="chevron-right" [size]="14" />
+                  </a>
+                }
+                @if (o.telegram_chat_id || o.viber_user_id) {
+                  <div class="adm-row" style="margin-top:8px">
+                    @if (o.telegram_chat_id) { <span class="adm-pill ok">Telegram підписано</span> }
+                    @if (o.viber_user_id) { <span class="adm-pill ok">Viber підписано</span> }
+                  </div>
+                }
+              }
+            </div>
+          </section>
+
+          @if (o.comment) {
+            <section class="adm-card pad comment">
+              <div class="adm-section-title">Коментар клієнта</div>
+              <p>{{ o.comment }}</p>
+            </section>
+          }
+
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Доставка</h2></div>
+            <div class="adm-card-body adm-stack" style="gap:10px">
+              <div class="small"><b>{{ o.delivery_name }}</b></div>
+              @if (o.delivery_type !== 'pickup') {
+                <label class="field"><span class="label">Місто</span><input class="input" [(ngModel)]="delivery.delivery_city" /></label>
+                @if (o.delivery_type === 'np_warehouse') {
+                  <label class="field"><span class="label">Відділення</span><input class="input" [(ngModel)]="delivery.delivery_branch" /></label>
+                } @else {
+                  <label class="field"><span class="label">Адреса</span><input class="input" [(ngModel)]="delivery.delivery_address" /></label>
+                }
+              }
+              <label class="field"><span class="label">ТТН</span>
+                <div class="adm-row nowrap-row">
+                  <input class="input" [(ngModel)]="delivery.tracking_number" placeholder="20450000000000" />
+                  @if (npTracking()) { <a class="icon-btn" [href]="npTracking()" target="_blank" title="Відстежити"><app-icon name="external" [size]="16" /></a> }
+                </div>
+              </label>
+              <button class="btn btn-sm btn-outline" (click)="saveDelivery()" [disabled]="busy()">Зберегти доставку</button>
+              <p class="adm-hint">Порада: додайте ТТН і переведіть у «Відправлене» — клієнт отримає номер для відстеження.</p>
+            </div>
+          </section>
+
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Оплата</h2></div>
+            <div class="adm-card-body adm-stack" style="gap:10px">
+              <div class="small">{{ o.payment_name }}</div>
+              <select class="select" [ngModel]="o.payment_status" (ngModelChange)="setPayment($event)" [disabled]="busy()">
+                @for (p of paymentStatuses; track p) { <option [value]="p">{{ paymentLabels[p] }}</option> }
+              </select>
+              @if (o.payment_url) { <a [href]="o.payment_url" target="_blank" class="small link-plain">Посилання на оплату Monobank</a> }
+            </div>
+          </section>
+
+          <section class="adm-card">
+            <div class="adm-card-head"><h2>Внутрішня нотатка</h2></div>
+            <div class="adm-card-body">
+              <textarea class="textarea" rows="3" [(ngModel)]="adminNote" placeholder="Бачите лише ви"></textarea>
+              @if (adminNote !== o.admin_note) {
+                <button class="btn btn-sm" style="margin-top:8px" (click)="saveNote()" [disabled]="busy()">Зберегти нотатку</button>
+              }
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <!-- packing slip (print only) -->
+    <div class="adm-print-only slip">
+      <h1>AMINA</h1>
+      <h2>Замовлення {{ o.number }} · {{ o.created_at | date: 'dd.MM.y' }}</h2>
+      <p><b>{{ o.customer_name }}</b>, {{ o.customer_phone }}<br />{{ o.delivery_name }}: {{ o.delivery_city }} {{ o.delivery_branch }} {{ o.delivery_address }}<br />Оплата: {{ o.payment_name }} ({{ paymentLabels[o.payment_status] }})</p>
+      <table>
+        <thead><tr><th>Товар</th><th>Розмір</th><th>Колір</th><th>К-сть</th><th>Сума</th></tr></thead>
+        <tbody>
+          @for (it of o.items; track it.id) {
+            <tr><td>{{ it.name }}</td><td>{{ it.size }}</td><td>{{ it.color }}</td><td>{{ it.quantity }}</td><td>{{ it.price * it.quantity | uah }}</td></tr>
+          }
+        </tbody>
+      </table>
+      <p class="sum">Разом: <b>{{ o.total | uah }}</b></p>
+      @if (o.comment) { <p>Коментар: {{ o.comment }}</p> }
+      <p class="thanks">Дякуємо, що обрали Amina 🤍</p>
+    </div>
+  </div>
+} @else {
+  <div class="adm-page"><div class="skeleton" style="height:420px;border-radius:10px"></div></div>
+}
