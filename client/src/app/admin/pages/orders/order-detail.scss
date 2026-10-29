@@ -5,17 +5,22 @@
 .closed { display: flex; gap: 8px; align-items: center; padding: 12px; background: #f3e6e3; color: var(--danger); border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
 
 .stepper { list-style: none; margin: 0 0 16px; padding: 0; display: flex; overflow-x: auto; scrollbar-width: none;
+  --dot: 24px;
+  --gap: 0px;
   li { flex: 1; min-width: 78px; position: relative; }
-  li::before { content: ''; position: absolute; top: 11px; left: -50%; right: 50%; height: 2px; background: var(--line); }
+  /* connector runs from the previous dot's edge to this dot's edge, never through a circle */
+  li::before { content: ''; position: absolute; top: calc(var(--dot) / 2 - 1px); height: 2px; border-radius: 2px;
+    left: calc(-50% + var(--dot) / 2 + var(--gap)); right: calc(50% + var(--dot) / 2 + var(--gap)); background: var(--line-strong); transition: background .3s; }
   li:first-child::before { display: none; }
-  li.done::before, li.current::before { background: var(--ink); }
+  li.done::before, li.current::before { background: var(--success); }
   button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; border: 0; background: none; padding: 0; }
-  .dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--surface); display: grid; place-items: center; color: var(--bg); transition: all .2s; }
+  .dot { width: var(--dot); height: var(--dot); border-radius: 50%; border: 2px solid var(--line-strong); background: var(--surface); display: grid; place-items: center; color: #fff; transition: all .2s; }
   .lbl { font-size: 11.5px; color: var(--muted); text-align: center; line-height: 1.2; }
-  li.done .dot { background: var(--ink); border-color: var(--ink); }
-  li.current .dot { border-color: var(--ink); box-shadow: 0 0 0 4px rgba(31,29,26,.1); background: var(--ink); }
+  li.done .dot { background: var(--success); border-color: var(--success); }
+  li.current .dot { background: var(--success); border-color: var(--success); box-shadow: 0 0 0 4px rgba(94, 122, 90, .18); }
+  li.done .lbl { color: var(--ink-2); }
   li.current .lbl { color: var(--ink); font-weight: 700; }
-  button:hover .dot { border-color: var(--ink); }
+  button:hover:not(:disabled) .dot { border-color: var(--success); }
 }
 .status-actions { display: flex; flex-wrap: wrap; gap: 8px;
   .input { flex: 2 1 220px; } .select { flex: 1 1 150px; width: auto; }
