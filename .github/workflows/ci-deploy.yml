@@ -1,0 +1,92 @@
+name: CI & Deploy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build & smoke test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: amina
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/amina
+      PORT: 3000
+      ADMIN_EMAIL: ci@amina.test
+      ADMIN_PASSWORD: ci-password-123
+      SEED_DEMO: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - name: Install
+        run: npm run install:all
+      - name: Typecheck API
+        run: npm run typecheck --prefix server
+      - name: Build
+        run: npm run build
+      - name: Smoke test (migrations, seed, API, SPA)
+        run: |
+          npm start > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS localhost:3000/api/health && break; sleep 1; done
+          curl -fsS localhost:3000/api/health
+          curl -fsS localhost:3000/api/categories | grep -q '"slug"'
+          curl -fsS "localhost:3000/api/products?limit=1" | grep -q '"items"'
+          curl -fsS localhost:3000/ | grep -q '<app-root>'
+          curl -fsS localhost:3000/admin/orders | grep -q '<app-root>'
+          TOKEN=$(curl -fsS -X POST localhost:3000/api/auth/login -H 'content-type: application/json' \
+            -d '{"email":"ci@amina.test","password":"ci-password-123"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+          curl -fsS localhost:3000/api/admin/dashboard -H "authorization: Bearer $TOKEN" | grep -q '"totals"'
+      - name: Server log
+        if: always()
+        run: cat server.log || true
+
+  deploy:
+    name: Deploy to Render
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL }}
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::Secret RENDER_DEPLOY_HOOK_URL is not set (Render → Service → Settings → Deploy Hook)"
+            exit 1
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deploy triggered for commit $GITHUB_SHA"
+      - name: Wait until the new version is live
+        if: vars.PUBLIC_URL != ''
+        run: |
+          # Render free instances can take a few minutes to build and boot
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 20 "${{ vars.PUBLIC_URL }}/api/health" > /dev/null; then echo "Site is up"; exit 0; fi
+            sleep 10
+          done
+          echo "::warning::Health check did not pass within 10 minutes — check the Render dashboard"

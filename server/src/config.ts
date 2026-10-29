@@ -1,3 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Local development: pick up ../.env (repo root) or ./.env if present. On Render, real env vars are used.
+for (const file of [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../.env')]) {
+  if (fs.existsSync(file)) {
+    process.loadEnvFile(file);
+    break;
+  }
+}
+
 const env = process.env;
 
 function bool(v: string | undefined, def = false): boolean {

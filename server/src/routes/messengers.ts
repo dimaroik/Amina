@@ -8,7 +8,7 @@ import { verifyViberSignature, viberEnabled } from '../services/notify/viber.js'
 
 export const messengersRouter = Router();
 
-messengersRouter.post('/webhooks/telegram/:secret', async (req, res) => {
+messengersRouter.post('/webhooks/telegram/:secret', express.json(), async (req, res) => {
   res.json({ ok: true });
   if (!telegramEnabled() || req.params.secret !== config.telegram.webhookSecret) return;
   const msg = req.body?.message;

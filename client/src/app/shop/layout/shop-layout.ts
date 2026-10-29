@@ -1,10 +1,25 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { CartDrawer } from './cart-drawer';
+import { ChatWidget } from './chat-widget';
+import { Footer } from './footer';
+import { Header } from './header';
+import { SearchOverlay } from './search-overlay';
 
 @Component({
   selector: 'app-shop-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet],
-  template: `<main><router-outlet /></main>`,
+  imports: [RouterOutlet, Header, Footer, CartDrawer, SearchOverlay, ChatWidget],
+  template: `
+    <app-header (search)="searchOpen.set(true)" />
+    <main class="main"><router-outlet /></main>
+    <app-footer />
+    <app-cart-drawer />
+    <app-search-overlay [(open)]="searchOpen" />
+    <app-chat-widget />
+  `,
+  styles: `.main { min-height: 60vh; }`,
 })
-export class ShopLayout {}
+export class ShopLayout {
+  protected searchOpen = signal(false);
+}

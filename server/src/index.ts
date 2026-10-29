@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { config } from './config.js';
 import { bootstrap } from './db/bootstrap.js';
 import { migrate } from './db/migrate.js';
+import { seedDemo } from './db/seed.js';
 import { requireAdmin } from './middleware/auth.js';
 import { adminCatalogRouter } from './routes/admin/catalog.js';
 import { adminMiscRouter } from './routes/admin/misc.js';
@@ -64,8 +65,10 @@ export function createApp() {
 }
 
 async function main() {
+  if (config.isProd && !process.env.JWT_SECRET) throw new Error('JWT_SECRET must be set in production');
   await migrate();
   await bootstrap();
+  if (config.seedDemo) await seedDemo();
   const app = createApp();
   app.listen(config.port, () => {
     console.log(`Amina API listening on :${config.port} (${config.publicUrl})`);

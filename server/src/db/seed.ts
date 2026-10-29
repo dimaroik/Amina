@@ -36,9 +36,7 @@ const products: Demo[] = [
   ['Футболка з щільного трикотажу', 'Футболки', 'tee-graphite', 990, null, [['Графіт', '#4a4f57']]],
 ];
 
-async function seed() {
-  await migrate();
-  await bootstrap();
+export async function seedDemo() {
   const existing = await one<{ n: number }>('SELECT COUNT(*) AS n FROM products');
   if ((existing?.n ?? 0) > 0) {
     console.log('[seed] products already exist — skipping demo catalog');
@@ -87,7 +85,9 @@ async function seed() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  seed()
+  migrate()
+    .then(bootstrap)
+    .then(seedDemo)
     .catch((err) => {
       console.error(err);
       process.exitCode = 1;
