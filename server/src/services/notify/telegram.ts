@@ -1,6 +1,16 @@
+import { createHash } from 'node:crypto';
 import { config } from '../../config.js';
 
 export const telegramEnabled = () => Boolean(config.telegram.botToken);
+
+/**
+ * URL-safe path segment for the webhook. Generated secrets (e.g. Render's generateValue) are base64
+ * and may contain "/" or "+", which would break the route, so only a hex digest goes into the URL.
+ */
+export function telegramWebhookPath(): string {
+  const source = config.telegram.webhookSecret || config.telegram.botToken;
+  return createHash('sha256').update(source).digest('hex').slice(0, 40);
+}
 
 async function api(method: string, body: Record<string, unknown>): Promise<any> {
   const res = await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/${method}`, {
@@ -25,9 +35,13 @@ export async function sendTelegram(chatId: string, html: string, buttons?: { tex
 }
 
 export async function setupTelegramWebhook(): Promise<void> {
-  if (!telegramEnabled() || !config.telegram.webhookSecret || !config.publicUrl.startsWith('https://')) return;
+  if (!telegramEnabled()) return;
+  if (!config.publicUrl.startsWith('https://')) {
+    console.warn(`[telegram] webhook not configured: public URL ${config.publicUrl} is not https`);
+    return;
+  }
   await api('setWebhook', {
-    url: `${config.publicUrl}/api/webhooks/telegram/${config.telegram.webhookSecret}`,
+    url: `${config.publicUrl}/api/webhooks/telegram/${telegramWebhookPath()}`,
     allowed_updates: ['message'],
   });
   console.log('[telegram] webhook configured');
