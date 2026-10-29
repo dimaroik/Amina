@@ -84,6 +84,9 @@ const blank = (): AdminProduct => ({
             <div class="adm-card">
               <div class="adm-card-head"><h3>Розміри, кольори й залишки</h3><span class="adm-hint">{{ d.variants.length }} варіантів · {{ totalStock() }} шт.</span></div>
               <div class="adm-card-body adm-stack" style="gap:14px">
+                @if (!d.variants.length) {
+                  <p class="adm-hint" style="margin:0">Оберіть розміри й кольори, вкажіть кількість і натисніть «Згенерувати варіанти» — з'явиться таблиця залишків.</p>
+                }
                 <div class="gen">
                   <div class="field">
                     <label class="label">Розміри</label>
@@ -302,7 +305,7 @@ export class ProductEditorPage implements HasUnsavedChanges {
     this.customColor = '';
   }
 
-  generate() {
+  generate(announce = true) {
     const sizes = this.genSizes().size ? SIZE_PRESETS.filter((s) => this.genSizes().has(s)) : [''];
     const colors = this.genColors().size ? this.colorPresets.filter((c) => this.genColors().has(c[0])) : [['', null] as [string, string | null]];
     const p = this.p();
@@ -316,7 +319,7 @@ export class ProductEditorPage implements HasUnsavedChanges {
       }
     }
     this.touch();
-    this.toasts.show(added ? `Додано варіантів: ${added}` : 'Усі ці комбінації вже є');
+    if (announce) this.toasts.show(added ? `Додано варіантів: ${added}` : 'Усі ці комбінації вже є');
   }
 
   addVariant() {
@@ -349,7 +352,9 @@ export class ProductEditorPage implements HasUnsavedChanges {
     const p = this.p();
     if (!p.name.trim()) return this.toasts.error('Вкажіть назву товару');
     if (!(Number(p.price) >= 0)) return this.toasts.error('Вкажіть ціну');
-    if (!p.variants.length) return this.toasts.error('Додайте хоча б один варіант (розмір / колір)');
+    // Chips picked but «Згенерувати» not pressed yet — create the variants instead of failing
+    if (!p.variants.length && (this.genSizes().size || this.genColors().size)) this.generate(false);
+    if (!p.variants.length) return this.toasts.error('Оберіть розміри й кольори та натисніть «Згенерувати варіанти»');
     const body = {
       ...p,
       id: undefined,
