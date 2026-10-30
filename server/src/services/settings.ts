@@ -43,11 +43,17 @@ export interface ChatbotSettings {
   instructions: string;
 }
 
+export interface AnalyticsSettings {
+  ga4Id: string;
+  metaPixelId: string;
+}
+
 export interface Settings {
   store: StoreSettings;
   payment: PaymentSettings;
   notifications: NotificationSettings;
   chatbot: ChatbotSettings;
+  analytics: AnalyticsSettings;
 }
 
 export const defaultSettings: Settings = {
@@ -84,6 +90,10 @@ export const defaultSettings: Settings = {
     notifyCustomerEmail: true,
     notifyCustomerWhatsapp: false,
     notifyAdminOnChatHandoff: true,
+  },
+  analytics: {
+    ga4Id: '',
+    metaPixelId: '',
   },
   chatbot: {
     enabled: true,

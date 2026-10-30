@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { Analytics } from '../../../core/analytics.service';
 import { Api, errorMessage } from '../../../core/api.service';
 import type { OrderResponse } from '../../../core/models';
 import { Icon } from '../../../shared/icon';
@@ -57,6 +58,7 @@ export class OrderPage {
   readonly phone = input<string>();
 
   private api = inject(Api);
+  private analytics = inject(Analytics);
   protected data = signal<OrderResponse | null>(null);
   protected error = signal('');
   protected fresh = signal(false);
@@ -73,6 +75,9 @@ export class OrderPage {
         if (cached?.order.number === number) {
           this.data.set(cached);
           this.fresh.set(true);
+          // only the page reached right after checkout reports the purchase
+          const o = cached.order;
+          this.analytics.purchase(o.number, o.total, o.items.map((i) => ({ id: i.product_id ?? i.name, name: i.name, price: i.price, quantity: i.quantity, variant: [i.color, i.size].filter(Boolean).join(' / ') })), o.delivery_cost);
         }
       } catch { /* ignore */ }
       this.load();

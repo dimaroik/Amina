@@ -6,7 +6,7 @@ import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
 import { AdminApi, type AdminSettings } from '../../admin-api';
 
-type Tab = 'store' | 'payment' | 'notifications' | 'chatbot' | 'integrations';
+type Tab = 'store' | 'payment' | 'notifications' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
 
 const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean; area?: boolean }[] = [
@@ -128,6 +128,30 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
               </div>
             </div>
           }
+          @case ('analytics') {
+            <div class="adm-grid adm-grid-2">
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Google Analytics 4</div>
+                <div class="field">
+                  <label class="label">Measurement ID</label>
+                  <input class="input" [(ngModel)]="s.analytics.ga4Id" placeholder="G-XXXXXXXXXX" />
+                  <div class="adm-hint">analytics.google.com → Адміністрування → Потоки даних → Веб → «Ідентифікатор показника».</div>
+                </div>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Meta Pixel (Facebook / Instagram)</div>
+                <div class="field">
+                  <label class="label">Pixel ID</label>
+                  <input class="input" [(ngModel)]="s.analytics.metaPixelId" placeholder="123456789012345" />
+                  <div class="adm-hint">business.facebook.com → Events Manager → джерело даних → «Ідентифікатор пікселя» (лише цифри).</div>
+                </div>
+              </div>
+            </div>
+            <div class="adm-card pad" style="margin-top:16px">
+              <div class="adm-section-title">Що відстежується</div>
+              <p class="adm-hint" style="margin:0">Перегляди сторінок, перегляд товару, додавання в кошик, початок оформлення та покупка з сумою і складом замовлення — у форматі e-commerce GA4 і стандартних подій Meta (ViewContent, AddToCart, InitiateCheckout, Purchase). Адмінка не відстежується. Порожнє поле — скрипт не завантажується.</p>
+            </div>
+          }
           @case ('integrations') {
             <div class="adm-card">
               <ul class="adm-list" style="padding:0 18px">
@@ -167,6 +191,7 @@ export class SettingsPage {
     { v: 'payment', l: 'Оплата' },
     { v: 'notifications', l: 'Сповіщення' },
     { v: 'chatbot', l: 'Чат-бот' },
+    { v: 'analytics', l: 'Аналітика' },
     { v: 'integrations', l: 'Інтеграції' },
   ];
   protected storeFields = STORE_FIELDS;
