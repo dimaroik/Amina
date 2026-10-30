@@ -29,6 +29,19 @@ messengersRouter.post('/webhooks/telegram/:secret', express.json(), async (req, 
         return;
       }
     }
+    const alert = text.match(/^\/start\s+s_([a-f0-9]{24})/);
+    if (alert) {
+      const row = await one(
+        `UPDATE stock_alerts a SET telegram_chat_id = $2 FROM product_variants v JOIN products p ON p.id = v.product_id
+         WHERE a.token = $1 AND v.id = a.variant_id RETURNING p.name, v.size, v.color`,
+        [alert[1], chatId],
+      );
+      if (row) {
+        const variant = [row.color, row.size && `розмір ${row.size}`].filter(Boolean).join(', ');
+        await sendTelegram(chatId, `Готово! 🤍 Ми напишемо вам тут, щойно <b>${escapeHtml(row.name)}</b>${variant ? ` (${escapeHtml(variant)})` : ''} з'явиться в наявності.`);
+        return;
+      }
+    }
     if (text.startsWith('/id')) {
       await sendTelegram(chatId, `Ваш chat ID: <code>${chatId}</code>\nДодайте його в адмінці → Налаштування → Сповіщення, щоб отримувати нові замовлення.`);
       return;

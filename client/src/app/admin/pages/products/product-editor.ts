@@ -133,6 +133,7 @@ const blank = (): AdminProduct => ({
                                 <input type="number" min="0" [(ngModel)]="v.stock" (ngModelChange)="touch()" />
                                 <button (click)="v.stock = +v.stock + 1; touch()">+</button>
                               </div>
+                              @if (v.waiting) { <div class="waiting" title="Стільки людей чекають на сповіщення про наявність">🔔 чекають: {{ v.waiting }}</div> }
                             </td>
                             <td class="num" data-label="Ціна"><input class="input sm w90" type="number" min="0" [(ngModel)]="v.price" (ngModelChange)="touch()" [placeholder]="d.price" /></td>
                             <td><button class="icon-btn" (click)="removeVariant(i)" title="Видалити"><app-icon name="trash" [size]="15" /></button></td>
@@ -206,6 +207,7 @@ const blank = (): AdminProduct => ({
     .stepper button { width: 28px; height: 32px; border: 0; background: var(--surface-2); }
     .stepper input { width: 48px; height: 32px; border: 0; text-align: center; outline: none; -moz-appearance: textfield; }
     .danger { color: var(--danger); align-self: flex-start; }
+    .waiting { font-size: 11px; color: var(--warning); font-weight: 600; margin-top: 4px; white-space: nowrap; }
     @media (min-width: 1200px) { .side { position: sticky; top: 76px; } }
   `,
 })
@@ -361,7 +363,7 @@ export class ProductEditorPage implements HasUnsavedChanges {
       slug: p.slug.trim() || undefined,
       price: Number(p.price),
       old_price: p.old_price === null || (p.old_price as unknown) === '' ? null : Number(p.old_price),
-      variants: p.variants.map((v) => ({ ...v, stock: Number(v.stock) || 0, price: v.price === null || (v.price as unknown) === '' ? null : Number(v.price), color_hex: v.color_hex || null })),
+      variants: p.variants.map(({ waiting: _w, ...v }) => ({ ...v, stock: Number(v.stock) || 0, price: v.price === null || (v.price as unknown) === '' ? null : Number(v.price), color_hex: v.color_hex || null })),
     };
     this.busy.set(true);
     const req = this.isNew() ? this.api.post<{ id: number }>('/products', body) : this.api.put<{ id: number }>(`/products/${p.id}`, body);

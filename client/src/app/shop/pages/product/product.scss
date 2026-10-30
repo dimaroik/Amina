@@ -1,14 +1,14 @@
 .crumbs { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); padding-top: 20px; padding-bottom: 16px; a:hover { color: var(--ink); } }
-.pdp { display: grid; gap: 28px; padding-bottom: 64px; }
-@media (min-width: 900px) { .pdp { grid-template-columns: 1.25fr 1fr; gap: 56px; } }
+.pdp { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; padding-bottom: 64px; }
+@media (min-width: 900px) { .pdp { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 56px; } }
 
 .gallery { display: flex; gap: 12px; min-width: 0; }
 .thumbs { display: none; flex-direction: column; gap: 8px; width: 76px; flex-shrink: 0; }
 @media (min-width: 900px) { .thumbs { display: flex; } }
 .thumb { padding: 0; border: 1px solid transparent; background: var(--surface-2); aspect-ratio: 3 / 4; opacity: .6; transition: all .25s; img { width: 100%; height: 100%; object-fit: cover; } }
 .thumb.on, .thumb:hover { opacity: 1; border-color: var(--ink); }
-.main { position: relative; flex: 1; aspect-ratio: 3 / 4; overflow: hidden; background: var(--surface-2); margin: 0 calc(var(--gutter) * -1); }
-@media (min-width: 900px) { .main { margin: 0; } }
+.main { position: relative; flex: 0 0 auto; width: calc(100% + 2 * var(--gutter)); aspect-ratio: 3 / 4; overflow: hidden; background: var(--surface-2); margin: 0 calc(var(--gutter) * -1); }
+@media (min-width: 900px) { .main { flex: 1; width: auto; margin: 0; } }
 .frame { position: absolute; inset: 0; opacity: 0; transition: opacity .5s var(--ease); cursor: zoom-in;
   img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s var(--ease); }
   img.zoomed { transform: scale(1.8); }
@@ -50,8 +50,9 @@
   button { width: 40px; height: 100%; border: 0; background: none; display: grid; place-items: center; }
   span { min-width: 26px; text-align: center; font-weight: 500; }
 }
-.add { flex: 1; }
-.wish { padding: 0 16px; }
+.add { flex: 1 1 auto; min-width: 0; padding: 0 14px; }
+@media (max-width: 420px) { .add { letter-spacing: .08em; } .buy .qty button { width: 34px; } }
+.wish { flex: 0 0 50px; padding: 0; }
 .wish.on { color: var(--sale); }
 .perks { list-style: none; padding: 18px 0; margin: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; color: var(--ink-2);
   li { display: flex; gap: 12px; align-items: center; }
@@ -96,3 +97,8 @@
   th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   tr.hl td { background: var(--surface-2); font-weight: 600; }
 }
+
+.notify-btn { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--ink-2); }
+
+/* keep the floating chat button from covering the sticky add-to-cart button */
+@media (max-width: 599px) { .sticky-bar { padding-right: 84px; } }
