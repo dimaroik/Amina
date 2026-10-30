@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { scheduleAuto } from '../../services/channel.js';
+import { onProductSaved, productPostState, scheduleAuto } from '../../services/channel.js';
 import { getSettings } from '../../services/settings.js';
 import multer from 'multer';
 import { z } from 'zod';
@@ -270,6 +270,7 @@ export async function saveProduct(id: number | null, b: z.infer<typeof productSc
 adminCatalogRouter.post('/products', async (req, res) => {
   const id = await saveProduct(null, productSchema.parse(req.body));
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
+  onProductSaved(id, null).catch((err) => console.error('[channel]', err));
   res.status(201).json(await one('SELECT * FROM products WHERE id = $1', [id]));
 });
 
@@ -278,14 +279,18 @@ const discountOf = (p: { price: number; old_price: number | null } | null) =>
 
 adminCatalogRouter.put('/products/:id', async (req, res) => {
   const before = await one<{ price: number; old_price: number | null }>('SELECT price, old_price FROM products WHERE id = $1', [Number(req.params.id)]);
+  const beforePost = await productPostState(Number(req.params.id));
   const id = await saveProduct(Number(req.params.id), productSchema.parse(req.body));
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   const after = await one('SELECT * FROM products WHERE id = $1', [id]);
-  // a new or deeper discount on an item people can buy goes to the Telegram channel
-  if (after?.is_active && discountOf(after) > discountOf(before) && (await getSettings()).channel.postOnSale) {
-    const stock = await one<{ n: number }>('SELECT COALESCE(SUM(stock), 0)::int AS n FROM product_variants WHERE product_id = $1', [id]);
-    if (stock && stock.n > 0) scheduleAuto([{ productId: id, kind: 'sale' }]).catch((err) => console.error('[channel]', err));
-  }
+  const autopost = async () => {
+    await onProductSaved(id, beforePost);
+    // a new or deeper discount on an item people can buy is news too
+    if (after?.is_active && discountOf(after) > discountOf(before) && (await getSettings()).channel.postOnSale) {
+      if ((await productPostState(id)).stock > 0) await scheduleAuto([{ productId: id, kind: 'sale' }]);
+    }
+  };
+  autopost().catch((err) => console.error('[channel]', err));
   res.json(after);
 });
 
@@ -312,8 +317,10 @@ adminCatalogRouter.post('/products/bulk', async (req, res) => {
     unfeature: 'UPDATE products SET is_featured = false WHERE id = ANY($1)',
     delete: 'DELETE FROM products WHERE id = ANY($1)',
   }[b.action];
+  const before = b.action === 'activate' || b.action === 'deactivate' ? await Promise.all(b.ids.map((id) => productPostState(id))) : [];
   await query(sql, [b.ids]);
   if (b.action === 'activate') processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
+  for (const [i, id] of b.ids.entries()) if (before[i]) onProductSaved(id, before[i]).catch((err) => console.error('[channel]', err));
   res.json({ ok: true });
 });
 

@@ -210,6 +210,10 @@ export interface AdminSettings {
       autoTime: string;
       album: boolean;
       postOnSale: boolean;
+      postOnCreate: boolean;
+      postOnRestock: boolean;
+      manualDelay: number;
+      telegramAuto: boolean;
       digestEnabled: boolean;
       digestDay: number;
       digestTime: string;

@@ -30,6 +30,12 @@ export async function channelReady(): Promise<boolean> {
   return telegramEnabled() && Boolean((await getSettings()).channel.chatId);
 }
 
+/** Where automatic posts and the weekly digest go: the Telegram channel and the switched-on networks. */
+export async function autoTargets(): Promise<Target[]> {
+  const tg = (await getSettings()).channel.telegramAuto && (await channelReady());
+  return [...(tg ? (['telegram'] as Target[]) : []), ...(await autoNetworks())];
+}
+
 /** Photo bytes for an image URL of the store (uploaded, bundled demo asset, or external). */
 export async function imageBytes(url: string): Promise<Buffer | null> {
   try {
@@ -223,12 +229,11 @@ export function nextKyivTime(hhmm: string, from = new Date()): Date {
  * Queues automatic posts: right away, or at the hour set in Налаштування → Telegram. A product is
  * skipped when it is already waiting in the queue or was posted in the last two days.
  */
-export async function scheduleAuto(items: { productId: number; kind: PostKind }[]): Promise<number> {
+export async function scheduleAuto(items: { productId: number; kind: PostKind }[], delayMin = 0): Promise<number> {
   if (!items.length) return 0;
-  const targets: Target[] = [...((await channelReady()) ? (['telegram'] as Target[]) : []), ...(await autoNetworks())];
+  const targets = await autoTargets();
   if (!targets.length) return 0;
-  const s = await getSettings();
-  const at = s.channel.autoTime ? nextKyivTime(s.channel.autoTime) : new Date();
+  const at = await autoRunAt(delayMin);
   let queued = 0;
   for (const it of items.slice(0, 15)) {
     for (const target of targets) {
@@ -245,6 +250,65 @@ export async function scheduleAuto(items: { productId: number; kind: PostKind }[
   }
   if (queued && at.getTime() <= Date.now()) void processQueue();
   return queued;
+}
+
+/** When an automatic post goes out: after the delay, then at the configured hour if there is one. */
+async function autoRunAt(delayMin: number): Promise<Date> {
+  const s = (await getSettings()).channel;
+  const base = new Date(Date.now() + delayMin * 60_000);
+  return s.autoTime ? nextKyivTime(s.autoTime, base) : base;
+}
+
+export interface ProductPostState {
+  ready: boolean;
+  stock: number;
+}
+
+/** On sale, in stock and with a photo — what a post about a product needs. */
+export async function productPostState(id: number): Promise<ProductPostState> {
+  const r = await one<{ active: boolean; stock: number; photo: boolean }>(
+    `SELECT p.is_active AS active,
+       COALESCE((SELECT SUM(stock) FROM product_variants WHERE product_id = p.id), 0)::int AS stock,
+       EXISTS (SELECT 1 FROM product_images WHERE product_id = p.id) AS photo
+     FROM products p WHERE p.id = $1`,
+    [id],
+  );
+  return { ready: Boolean(r && r.active && r.photo && r.stock > 0), stock: r?.stock ?? 0 };
+}
+
+/**
+ * After the admin saves a product by hand: a fresh product that just became ready → «Новинка»;
+ * stock raised from 0 → «Знову в наявності». The post waits `manualDelay` minutes, and every
+ * further save pushes it back, so it goes out with the final photos and text.
+ */
+export async function onProductSaved(id: number, before: ProductPostState | null): Promise<void> {
+  const s = (await getSettings()).channel;
+  const now = await productPostState(id);
+  const waiting = await query<{ id: number }>(
+    "SELECT id FROM channel_queue WHERE product_id = $1 AND status = 'pending' AND source = 'auto' AND kind IN ('new', 'restock')",
+    [id],
+  );
+  if (waiting.length) {
+    if (!now.ready) {
+      await query("UPDATE channel_queue SET status = 'cancelled', error = 'товар прихований, без фото або закінчився' WHERE id = ANY($1)", [waiting.map((w) => w.id)]);
+    } else {
+      await query('UPDATE channel_queue SET run_at = GREATEST(run_at, $2) WHERE id = ANY($1)', [waiting.map((w) => w.id), await autoRunAt(s.manualDelay)]);
+    }
+    return;
+  }
+  if (!now.ready || before?.ready) return;
+  // became ready just now: a product nobody has heard of yet is news, one that ran out is back
+  const fresh = await one(
+    `SELECT 1 FROM products p WHERE p.id = $1 AND p.created_at > now() - interval '14 days'
+       AND NOT EXISTS (SELECT 1 FROM telegram_posts WHERE product_id = p.id)
+       AND NOT EXISTS (SELECT 1 FROM channel_queue WHERE product_id = p.id AND status IN ('pending', 'sent'))`,
+    [id],
+  );
+  if (fresh) {
+    if (s.postOnCreate) await scheduleAuto([{ productId: id, kind: 'new' }], s.manualDelay);
+  } else if (before && before.stock === 0 && s.postOnRestock) {
+    await scheduleAuto([{ productId: id, kind: 'restock' }], s.manualDelay);
+  }
 }
 
 /** A post the admin scheduled by hand for a specific time. */
@@ -283,6 +347,11 @@ export async function processQueue(): Promise<void> {
         const active = q.product_id ? await one('SELECT 1 FROM products WHERE id = $1 AND is_active', [q.product_id]) : null;
         if (!active) {
           await query("UPDATE channel_queue SET status = 'cancelled', error = 'товар прихований або видалений' WHERE id = $1", [q.id]);
+          continue;
+        }
+        // «новинка», «знову в наявності» and «знижка» are about things to buy now
+        if (['new', 'restock', 'sale'].includes(q.kind) && (await productPostState(q.product_id!)).stock === 0) {
+          await query("UPDATE channel_queue SET status = 'cancelled', error = 'товар закінчився' WHERE id = $1", [q.id]);
           continue;
         }
         await publishTo(q.target, q.product_id!, q.kind as PostKind);
@@ -358,8 +427,8 @@ async function telegramDigest(list: Awaited<ReturnType<typeof digestProducts>>):
 
 /** «Новинки тижня» to the Telegram channel and every connected network that takes automatic posts. */
 export async function postDigest(): Promise<{ count: number; posted: Target[]; errors: string[] } | null> {
-  const targets: Target[] = [...((await channelReady()) ? (['telegram'] as Target[]) : []), ...(await autoNetworks())];
-  if (!targets.length) throw new Error('Не підключено жодного каналу чи соцмережі');
+  const targets = await autoTargets();
+  if (!targets.length) throw new Error('Не підключено жодного каналу чи соцмережі (або автопублікацію вимкнено)');
   const list = await digestProducts();
   if (!list.length) return null;
   const posted: Target[] = [];
@@ -388,7 +457,7 @@ let digesting = false;
 async function maybeDigest(): Promise<void> {
   if (digesting) return;
   const s = (await getSettings()).channel;
-  if (!s.digestEnabled || (!(await channelReady()) && !(await autoNetworks()).length)) return;
+  if (!s.digestEnabled || !(await autoTargets()).length) return;
   const now = kyivParts(new Date());
   if (now.weekday !== s.digestDay || now.hhmm < s.digestTime) return;
   // claim the day before posting: Instagram carousels take longer than the 1-minute tick,
