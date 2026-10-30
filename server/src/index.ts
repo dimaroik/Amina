@@ -28,6 +28,7 @@ import { adminTelegramCodRouter } from './routes/admin/telegram-cod.js';
 import { stockAlertsRouter } from './routes/stock-alerts.js';
 import { processStockAlerts } from './services/stock-alerts.js';
 import { startTrackingJob } from './services/np-tracking.js';
+import { startChannelJob } from './services/channel.js';
 import { setupTelegramWebhook } from './services/notify/telegram.js';
 import { setupAdminCommands } from './services/admin-bot.js';
 import { setupViberWebhook } from './services/notify/viber.js';
@@ -94,6 +95,7 @@ async function main() {
   });
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   startTrackingJob();
+  startChannelJob();
   void withRetries('viber', setupViberWebhook);
 }
 

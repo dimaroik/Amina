@@ -257,6 +257,12 @@ adminMiscRouter.put('/settings', async (req, res) => {
           postOnReceive: z.boolean(),
           postOnAnnounce: z.boolean(),
           buttonText: z.string().trim().min(1).max(40),
+          autoTime: z.union([z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Час у форматі ГГ:ХХ'), z.literal('')]),
+          album: z.boolean(),
+          postOnSale: z.boolean(),
+          digestEnabled: z.boolean(),
+          digestDay: z.number().int().min(1).max(7),
+          digestTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Час у форматі ГГ:ХХ'),
         })
         .partial()
         .optional(),

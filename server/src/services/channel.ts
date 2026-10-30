@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { one, query } from '../db/pool.js';
 import { loadImage } from './images.js';
 import { money } from './labels.js';
-import { escapeHtml as esc, sendTelegram, sendTelegramPhoto, telegramEnabled, type TgKeyboard } from './notify/telegram.js';
+import { escapeHtml as esc, sendTelegram, sendTelegramAlbum, sendTelegramPhoto, telegramEnabled, type TgKeyboard } from './notify/telegram.js';
 import { preorderWhenText } from './orders.js';
 import { getSettings } from './settings.js';
 
@@ -107,47 +107,252 @@ async function caption(productId: number, kind: PostKind): Promise<{ html: strin
     p.composition ? `Склад: ${esc(p.composition)}` : '',
   ].filter(Boolean).join('\n');
   let desc = String(p.description ?? '').trim();
-  const room = 1000 - head.length - facts.length - 4;
+  // leave room for the «buy» link that albums carry in the caption (limit 1024)
+  const room = 920 - head.length - facts.length - 4;
   if (desc.length > room) desc = room > 80 ? `${desc.slice(0, room - 1).replace(/\s+\S*$/, '')}…` : '';
   const lines = [head, desc ? esc(desc) : '', facts].filter(Boolean).join('\n\n');
   return { html: lines, slug: p.slug, image: p.image };
 }
 
-/** Publishes a product to the store's channel: first photo, caption and a «buy» button. */
+/** Up to `max` photos of a product as JPEG (skipping any that fail to load). */
+async function productPhotos(productId: number, max: number): Promise<Buffer[]> {
+  const imgs = await query<{ url: string }>('SELECT url FROM product_images WHERE product_id = $1 ORDER BY sort_order, id LIMIT $2', [productId, max]);
+  const out: Buffer[] = [];
+  for (const { url } of imgs) {
+    const raw = await imageBytes(url);
+    const jpg = raw ? await toJpeg(raw) : null;
+    if (jpg) out.push(jpg);
+  }
+  return out;
+}
+
+/**
+ * Publishes a product to the store's channel: one photo with a «buy» button, or — when the product
+ * has several photos and albums are on — an album of up to 4 with the link in the caption.
+ */
 export async function postProduct(productId: number, kind?: PostKind): Promise<{ messageId: number; kind: PostKind }> {
   const s = await getSettings();
   if (!telegramEnabled()) throw new Error('Telegram-бот не підключено (TELEGRAM_BOT_TOKEN)');
-  if (!s.channel.chatId) throw new Error('Вкажіть канал у Налаштування → Telegram-канал');
+  if (!s.channel.chatId) throw new Error('Вкажіть канал у Налаштування → Telegram');
   const k = kind ?? (await suggestKind(productId));
   const c = await caption(productId, k);
   if (!c) throw new Error('Товар не знайдено');
   const url = `${config.publicUrl}/product/${c.slug}`;
-  const keyboard: TgKeyboard | undefined = config.publicUrl.startsWith('https://') ? [[{ text: s.channel.buttonText || 'Замовити на сайті', url }]] : undefined;
-  const raw = c.image ? await imageBytes(c.image) : null;
-  const photo = raw ? await toJpeg(raw) : null;
-  const msg = photo ? await sendTelegramPhoto(s.channel.chatId, photo, c.html, keyboard) : await sendTelegram(s.channel.chatId, c.html, keyboard);
+  const linkable = config.publicUrl.startsWith('https://');
+  const buttonText = s.channel.buttonText || 'Замовити на сайті';
+  const photos = await productPhotos(productId, s.channel.album ? 4 : 1);
+  let msg: { message_id: number };
+  if (photos.length >= 2) {
+    const link = linkable ? `\n\n<a href="${esc(url)}">🛍 ${esc(buttonText)} →</a>` : '';
+    msg = await sendTelegramAlbum(s.channel.chatId, photos, `${c.html}${link}`);
+  } else {
+    const keyboard: TgKeyboard | undefined = linkable ? [[{ text: buttonText, url }]] : undefined;
+    msg = photos[0] ? await sendTelegramPhoto(s.channel.chatId, photos[0], c.html, keyboard) : await sendTelegram(s.channel.chatId, c.html, keyboard);
+  }
   await query('INSERT INTO telegram_posts(product_id, chat_id, message_id, kind) VALUES ($1, $2, $3, $4)', [productId, s.channel.chatId, msg.message_id, k]);
   return { messageId: msg.message_id, kind: k };
 }
 
-/** Posts several products one by one (Telegram limits channels to ~20 messages a minute). */
-export async function postProducts(ids: number[], kind: (id: number) => Promise<PostKind | null>): Promise<number> {
-  if (!(await channelReady())) return 0;
-  let posted = 0;
-  for (const id of ids.slice(0, 15)) {
-    // the same product is not repeated within two days (e.g. announced, then received)
-    const recent = await one('SELECT 1 FROM telegram_posts WHERE product_id = $1 AND created_at > now() - interval \'2 days\'', [id]);
-    const k = recent ? null : await kind(id);
-    if (!k) continue;
-    try {
-      await postProduct(id, k);
-      posted++;
-      await new Promise((r) => setTimeout(r, 3500));
-    } catch (err) {
-      console.error('[channel]', err instanceof Error ? err.message : err);
-    }
+// ---------- time (the shop lives in Kyiv time) ----------
+
+const TZ = 'Europe/Kyiv';
+
+function kyivParts(d: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  );
+  const weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(parts.weekday!) + 1;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hhmm: `${parts.hour}:${parts.minute}`, weekday };
+}
+
+/** The UTC instant of a Kyiv wall-clock time (handles summer/winter time). */
+function kyivToUtc(date: string, hhmm: string): Date {
+  const guess = new Date(`${date}T${hhmm}:00Z`);
+  const shown = kyivParts(guess);
+  const diff = new Date(`${shown.date}T${shown.hhmm}:00Z`).getTime() - guess.getTime();
+  return new Date(guess.getTime() - diff);
+}
+
+/** Next moment the Kyiv clock shows `hhmm` (today if still ahead, otherwise tomorrow). */
+export function nextKyivTime(hhmm: string, from = new Date()): Date {
+  const today = kyivToUtc(kyivParts(from).date, hhmm);
+  if (today.getTime() > from.getTime()) return today;
+  return kyivToUtc(kyivParts(new Date(from.getTime() + 24 * 3600_000)).date, hhmm);
+}
+
+// ---------- queue ----------
+
+/**
+ * Queues automatic posts: right away, or at the hour set in Налаштування → Telegram. A product is
+ * skipped when it is already waiting in the queue or was posted in the last two days.
+ */
+export async function scheduleAuto(items: { productId: number; kind: PostKind }[]): Promise<number> {
+  if (!(await channelReady()) || !items.length) return 0;
+  const s = await getSettings();
+  const at = s.channel.autoTime ? nextKyivTime(s.channel.autoTime) : new Date();
+  let queued = 0;
+  for (const it of items.slice(0, 15)) {
+    // a discount is news even right after an arrival post; other kinds wait two days after any post
+    const busy = await one(
+      `SELECT 1 FROM telegram_posts WHERE product_id = $1 AND created_at > now() - interval '2 days' AND ($2 <> 'sale' OR kind = 'sale')
+       UNION ALL SELECT 1 FROM channel_queue WHERE product_id = $1 AND status = 'pending' LIMIT 1`,
+      [it.productId, it.kind],
+    );
+    if (busy) continue;
+    await query('INSERT INTO channel_queue(product_id, kind, run_at, source) VALUES ($1, $2, $3, $4)', [it.productId, it.kind, at, 'auto']);
+    queued++;
   }
-  return posted;
+  if (queued && at.getTime() <= Date.now()) void processQueue();
+  return queued;
+}
+
+/** A post the admin scheduled by hand for a specific time. */
+export async function scheduleManual(productId: number, kind: PostKind, at: Date) {
+  return one<{ id: number; run_at: string }>(
+    'INSERT INTO channel_queue(product_id, kind, run_at, source) VALUES ($1, $2, $3, $4) RETURNING id, run_at',
+    [productId, kind, at, 'manual'],
+  );
+}
+
+let processing = false;
+
+/** Sends due posts one by one (Telegram allows ~20 channel messages a minute). Failed ones are retried twice. */
+export async function processQueue(): Promise<void> {
+  if (processing) return;
+  processing = true;
+  try {
+    if (!(await channelReady())) return;
+    const due = await query<{ id: number; product_id: number | null; kind: string; attempts: number }>(
+      `SELECT q.id, q.product_id, q.kind, q.attempts FROM channel_queue q
+       WHERE q.status = 'pending' AND q.run_at <= now() ORDER BY q.run_at, q.id LIMIT 15`,
+    );
+    for (const q of due) {
+      try {
+        const active = q.product_id ? await one('SELECT 1 FROM products WHERE id = $1 AND is_active', [q.product_id]) : null;
+        if (!active) {
+          await query("UPDATE channel_queue SET status = 'cancelled', error = 'товар прихований або видалений' WHERE id = $1", [q.id]);
+          continue;
+        }
+        await postProduct(q.product_id!, q.kind as PostKind);
+        await query("UPDATE channel_queue SET status = 'sent', sent_at = now() WHERE id = $1", [q.id]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[channel queue]', msg);
+        await query(
+          `UPDATE channel_queue SET attempts = attempts + 1, error = $2,
+             status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'pending' END, run_at = now() + interval '10 minutes'
+           WHERE id = $1`,
+          [q.id, msg.slice(0, 500)],
+        );
+      }
+      await new Promise((r) => setTimeout(r, 3500));
+    }
+  } finally {
+    processing = false;
+  }
+}
+
+export function pendingPosts(productId?: number) {
+  return query<{ id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null }>(
+    `SELECT q.id, q.product_id, p.name, q.kind, q.run_at, q.source, q.attempts, q.error
+     FROM channel_queue q JOIN products p ON p.id = q.product_id
+     WHERE q.status = 'pending' AND ($1::int IS NULL OR q.product_id = $1) ORDER BY q.run_at LIMIT 50`,
+    [productId ?? null],
+  );
+}
+
+export async function cancelPost(id: number): Promise<boolean> {
+  const r = await query("UPDATE channel_queue SET status = 'cancelled' WHERE id = $1 AND status = 'pending' RETURNING id", [id]);
+  return r.length > 0;
+}
+
+// ---------- weekly digest ----------
+
+/** New arrivals of the last 7 days that can be bought (newest first, up to 10). */
+export function digestProducts() {
+  return query<{ id: number; name: string; slug: string; price: number; old_price: number | null; image: string | null }>(
+    `SELECT p.id, p.name, p.slug, p.price, p.old_price,
+       (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order, id LIMIT 1) AS image
+     FROM products p
+     WHERE p.is_active
+       AND COALESCE((SELECT SUM(stock) FROM product_variants WHERE product_id = p.id), 0) > 0
+       AND (p.created_at >= now() - interval '7 days'
+            OR EXISTS (SELECT 1 FROM telegram_posts t WHERE t.product_id = p.id AND t.kind = 'new' AND t.created_at >= now() - interval '7 days'))
+     ORDER BY p.created_at DESC LIMIT 10`,
+  );
+}
+
+/** «Новинки тижня»: an album of the first photos with a numbered list of links. */
+export async function postDigest(): Promise<{ messageId: number; count: number } | null> {
+  const s = await getSettings();
+  if (!(await channelReady())) throw new Error('Канал не підключено');
+  const list = await digestProducts();
+  if (!list.length) return null;
+  const linkable = config.publicUrl.startsWith('https://');
+  const rows = list.map((p, i) => {
+    const name = linkable ? `<a href="${esc(`${config.publicUrl}/product/${p.slug}`)}">${esc(p.name)}</a>` : esc(p.name);
+    const sale = p.old_price && p.old_price > p.price ? ` <s>${money(Number(p.old_price))}</s>` : '';
+    return `${i + 1}. ${name} — ${money(Number(p.price))}${sale}`;
+  });
+  const more = linkable ? `\n\n<a href="${esc(`${config.publicUrl}/catalog`)}">Увесь каталог →</a>` : '';
+  const text = `<b>✨ Новинки тижня</b>\n\n${rows.join('\n')}${more}`;
+  const photos: Buffer[] = [];
+  for (const p of list) {
+    const raw = p.image ? await imageBytes(p.image) : null;
+    const jpg = raw ? await toJpeg(raw) : null;
+    if (jpg) photos.push(jpg);
+  }
+  const msg =
+    photos.length >= 2
+      ? await sendTelegramAlbum(s.channel.chatId, photos.slice(0, 10), text)
+      : photos[0]
+        ? await sendTelegramPhoto(s.channel.chatId, photos[0], text)
+        : await sendTelegram(s.channel.chatId, text);
+  await query(
+    `INSERT INTO app_state(key, value, updated_at) VALUES ('last_digest', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [JSON.stringify({ date: kyivParts(new Date()).date, count: list.length })],
+  );
+  return { messageId: msg.message_id, count: list.length };
+}
+
+/** Posts the digest once on the chosen weekday after the chosen time (also if the server woke up late that day). */
+async function maybeDigest(): Promise<void> {
+  const s = (await getSettings()).channel;
+  if (!s.digestEnabled || !(await channelReady())) return;
+  const now = kyivParts(new Date());
+  if (now.weekday !== s.digestDay || now.hhmm < s.digestTime) return;
+  const last = await one<{ value: { date: string } }>("SELECT value FROM app_state WHERE key = 'last_digest'");
+  if (last?.value.date === now.date) return;
+  try {
+    const r = await postDigest();
+    // nothing new this week — remember the day anyway so it is not retried every minute
+    if (!r) {
+      await query(
+        `INSERT INTO app_state(key, value, updated_at) VALUES ('last_digest', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [JSON.stringify({ date: now.date, count: 0 })],
+      );
+    }
+  } catch (err) {
+    console.error('[channel digest]', err instanceof Error ? err.message : err);
+  }
+}
+
+export async function lastDigest() {
+  return one<{ value: { date: string; count: number } }>("SELECT value FROM app_state WHERE key = 'last_digest'").then((r) => r?.value ?? null);
+}
+
+/** Every minute: due scheduled posts and the weekly digest. Render's free plan sleeps when idle, so posts due during sleep go out on wake-up. */
+export function startChannelJob(): void {
+  const tick = () => {
+    processQueue().catch((err) => console.error('[channel queue]', err));
+    maybeDigest().catch((err) => console.error('[channel digest]', err));
+  };
+  setTimeout(tick, 20_000).unref();
+  setInterval(tick, 60_000).unref();
 }
 
 export async function lastPost(productId: number) {

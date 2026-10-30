@@ -7,7 +7,7 @@ import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js
 import { addHistory } from '../../services/orders.js';
 import { badRequest, HttpError, notFound } from '../../utils/errors.js';
 import { productSchema, saveProduct } from './catalog.js';
-import { postProducts, type PostKind } from '../../services/channel.js';
+import { scheduleAuto, type PostKind } from '../../services/channel.js';
 import { getSettings } from '../../services/settings.js';
 
 export const adminShipmentsRouter = Router();
@@ -110,7 +110,7 @@ adminShipmentsRouter.put('/shipments/:id', async (req, res) => {
     const shown = b.preorder_enabled || b.show_incoming;
     if (!wasShown && shown && (await getSettings()).channel.postOnAnnounce) {
       const kind: PostKind = b.preorder_enabled ? 'preorder' : 'incoming';
-      fireAndForget(postProducts(await soldOutProducts(id), async () => kind));
+      fireAndForget(scheduleAuto((await soldOutProducts(id)).map((productId) => ({ productId, kind }))));
     }
   }
   res.json(await loadShipment(id));
@@ -285,7 +285,10 @@ adminShipmentsRouter.post('/shipments/:id/receive', async (req, res) => {
   fireAndForget(processStockAlerts());
   if (publish && (await getSettings()).channel.postOnReceive) {
     const ids = [...new Set(s!.items.map((i) => i.product_id).filter((x): x is number => Boolean(x)))];
-    fireAndForget(postProducts(ids, async (pid) => (newIds.has(pid) ? 'new' : soldOut.has(pid) ? 'restock' : null)));
+    const items = ids.flatMap((productId) =>
+      newIds.has(productId) ? [{ productId, kind: 'new' as PostKind }] : soldOut.has(productId) ? [{ productId, kind: 'restock' as PostKind }] : [],
+    );
+    fireAndForget(scheduleAuto(items));
   }
   const author = req.user!.name || req.user!.email;
   for (const o of waiting) {

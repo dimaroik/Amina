@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { scheduleAuto } from '../../services/channel.js';
+import { getSettings } from '../../services/settings.js';
 import multer from 'multer';
 import { z } from 'zod';
 import { one, query, tx } from '../../db/pool.js';
@@ -271,10 +273,20 @@ adminCatalogRouter.post('/products', async (req, res) => {
   res.status(201).json(await one('SELECT * FROM products WHERE id = $1', [id]));
 });
 
+const discountOf = (p: { price: number; old_price: number | null } | null) =>
+  p && p.old_price && Number(p.old_price) > Number(p.price) ? Math.round((1 - Number(p.price) / Number(p.old_price)) * 100) : 0;
+
 adminCatalogRouter.put('/products/:id', async (req, res) => {
+  const before = await one<{ price: number; old_price: number | null }>('SELECT price, old_price FROM products WHERE id = $1', [Number(req.params.id)]);
   const id = await saveProduct(Number(req.params.id), productSchema.parse(req.body));
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
-  res.json(await one('SELECT * FROM products WHERE id = $1', [id]));
+  const after = await one('SELECT * FROM products WHERE id = $1', [id]);
+  // a new or deeper discount on an item people can buy goes to the Telegram channel
+  if (after?.is_active && discountOf(after) > discountOf(before) && (await getSettings()).channel.postOnSale) {
+    const stock = await one<{ n: number }>('SELECT COALESCE(SUM(stock), 0)::int AS n FROM product_variants WHERE product_id = $1', [id]);
+    if (stock && stock.n > 0) scheduleAuto([{ productId: id, kind: 'sale' }]).catch((err) => console.error('[channel]', err));
+  }
+  res.json(after);
 });
 
 adminCatalogRouter.post('/products/:id/duplicate', async (req, res) => {
