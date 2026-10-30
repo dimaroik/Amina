@@ -13,7 +13,7 @@ import { UahPipe } from '../../shared/uah.pipe';
     <div class="scrim" [class.show]="cart.drawerOpen()" (click)="cart.close()"></div>
     <aside class="drawer" [class.open]="cart.drawerOpen()" aria-label="Кошик" [attr.aria-hidden]="!cart.drawerOpen()">
       <div class="head">
-        <h2 class="h3">Кошик <span class="muted">({{ cart.count() }})</span></h2>
+        <h2 class="h3 title">Кошик <span class="count-badge" [class.empty]="!cart.count()" [attr.aria-label]="cart.count() + ' шт.'">{{ cart.count() }}</span></h2>
         <button class="icon-btn" (click)="cart.close()" aria-label="Закрити"><app-icon name="close" /></button>
       </div>
 
@@ -81,6 +81,9 @@ import { UahPipe } from '../../shared/uah.pipe';
     .scrim.show { opacity: 1; pointer-events: auto; }
     .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); background: var(--bg); z-index: 301; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .45s var(--ease); visibility: hidden; }
     .drawer.open { transform: none; box-shadow: var(--shadow-lg); visibility: visible; }
+    .title { display: flex; align-items: center; gap: 10px; }
+    .count-badge { min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--ink); color: var(--bg); font-family: var(--font-sans); font-size: 13px; font-weight: 600; line-height: 1; display: inline-grid; place-items: center; font-variant-numeric: lining-nums tabular-nums; }
+    .count-badge.empty { background: var(--surface-3); color: var(--muted); }
     .head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 14px 24px; border-bottom: 1px solid var(--line); }
     .progress { padding: 14px 24px 16px; border-bottom: 1px solid var(--line); }
     .progress p { margin: 0 0 8px; }
