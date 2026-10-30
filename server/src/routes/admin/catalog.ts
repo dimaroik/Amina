@@ -3,6 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { one, query, tx } from '../../db/pool.js';
 import { storeImage } from '../../services/images.js';
+import { processStockAlerts } from '../../services/stock-alerts.js';
 import { slugify } from '../../utils/slug.js';
 import { badRequest, notFound } from '../../utils/errors.js';
 import { buildTree } from '../catalog.js';
@@ -175,7 +176,9 @@ adminCatalogRouter.get('/products', async (req, res) => {
          c.name AS category_name,
          (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order, id LIMIT 1) AS image,
          (SELECT COALESCE(SUM(stock), 0) FROM product_variants WHERE product_id = p.id) AS stock,
-         (SELECT COUNT(*) FROM product_variants WHERE product_id = p.id) AS variants_count
+         (SELECT COUNT(*) FROM product_variants WHERE product_id = p.id) AS variants_count,
+         (SELECT COUNT(*) FROM stock_alerts a JOIN product_variants v ON v.id = a.variant_id
+           WHERE v.product_id = p.id AND a.notified_at IS NULL) AS waiting
        FROM products p LEFT JOIN categories c ON c.id = p.category_id
        WHERE ${sql} ORDER BY ${order}, p.id DESC LIMIT ${p.limit} OFFSET ${(p.page - 1) * p.limit}`,
       values,
@@ -205,7 +208,12 @@ adminCatalogRouter.get('/products/:id', async (req, res) => {
   if (!product) throw notFound('Товар не знайдено');
   const [images, variants] = await Promise.all([
     query('SELECT url, alt, color FROM product_images WHERE product_id = $1 ORDER BY sort_order, id', [id]),
-    query('SELECT id, size, color, color_hex, sku, stock, price FROM product_variants WHERE product_id = $1 ORDER BY sort_order, id', [id]),
+    query(
+      `SELECT id, size, color, color_hex, sku, stock, price,
+         (SELECT COUNT(*) FROM stock_alerts a WHERE a.variant_id = v.id AND a.notified_at IS NULL) AS waiting
+       FROM product_variants v WHERE product_id = $1 ORDER BY sort_order, id`,
+      [id],
+    ),
   ]);
   res.json({ ...product, images, variants });
 });
@@ -256,11 +264,13 @@ async function saveProduct(id: number | null, b: z.infer<typeof productSchema>) 
 
 adminCatalogRouter.post('/products', async (req, res) => {
   const id = await saveProduct(null, productSchema.parse(req.body));
+  processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   res.status(201).json(await one('SELECT * FROM products WHERE id = $1', [id]));
 });
 
 adminCatalogRouter.put('/products/:id', async (req, res) => {
   const id = await saveProduct(Number(req.params.id), productSchema.parse(req.body));
+  processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   res.json(await one('SELECT * FROM products WHERE id = $1', [id]));
 });
 
@@ -288,6 +298,7 @@ adminCatalogRouter.post('/products/bulk', async (req, res) => {
     delete: 'DELETE FROM products WHERE id = ANY($1)',
   }[b.action];
   await query(sql, [b.ids]);
+  if (b.action === 'activate') processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   res.json({ ok: true });
 });
 

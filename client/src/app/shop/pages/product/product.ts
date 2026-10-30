@@ -12,6 +12,7 @@ import { Wishlist } from '../../../core/wishlist.service';
 import { Icon } from '../../../shared/icon';
 import { ProductCardView } from '../../../shared/product-card';
 import { UahPipe } from '../../../shared/uah.pipe';
+import { StockAlertDialog } from './stock-alert';
 
 const SIZE_GUIDE = [
   ['XS', '40–42', '80–84', '62–66', '88–92'],
@@ -24,7 +25,7 @@ const SIZE_GUIDE = [
 @Component({
   selector: 'app-product',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, ProductCardView, UahPipe],
+  imports: [RouterLink, Icon, ProductCardView, UahPipe, StockAlertDialog],
   template: `
     @if (error()) {
       <div class="container empty-state">
@@ -107,6 +108,9 @@ const SIZE_GUIDE = [
                 @if (variant(); as v) {
                   @if (v.stock > 0 && v.stock <= 3) { <p class="low small"><span class="pulse"></span>Залишилось {{ v.stock }} шт.</p> }
                 }
+                @if (inStock() && hasMissingSizes()) {
+                  <button class="link small notify-btn" (click)="alertOpen.set(true)"><app-icon name="bell" [size]="15" /> Немає вашого розміру? Повідомимо про наявність</button>
+                }
               </div>
             }
 
@@ -116,9 +120,11 @@ const SIZE_GUIDE = [
                 <span>{{ qty() }}</span>
                 <button (click)="qty.set(Math.min(maxQty(), qty() + 1))" aria-label="Більше"><app-icon name="plus" [size]="16" /></button>
               </div>
-              <button class="btn add" (click)="addToCart()" [disabled]="!inStock()">
-                @if (!inStock()) { Немає в наявності } @else { <app-icon name="bag" [size]="18" /> Додати в кошик }
-              </button>
+              @if (inStock()) {
+                <button class="btn add" (click)="addToCart()"><app-icon name="bag" [size]="18" /> Додати в кошик</button>
+              } @else {
+                <button class="btn add" (click)="alertOpen.set(true)"><app-icon name="bell" [size]="18" /> Повідомити про наявність</button>
+              }
               <button class="btn btn-outline wish" [class.on]="wished()" (click)="toggleWish()" [attr.aria-label]="wished() ? 'Прибрати з обраного' : 'В обране'">
                 <app-icon [name]="wished() ? 'heart-fill' : 'heart'" [size]="18" />
               </button>
@@ -179,6 +185,10 @@ const SIZE_GUIDE = [
         </div>
       }
 
+      @if (alertOpen() && p(); as prod) {
+        <app-stock-alert [product]="prod" [color]="color()" [size]="size()" (close)="alertOpen.set(false)" />
+      }
+
       @if (guide()) {
         <div class="modal-wrap" (click)="guide.set(false)">
           <div class="modal" (click)="$event.stopPropagation()">
@@ -218,6 +228,7 @@ export class ProductPage {
   protected zoom = signal<string | null>(null);
   protected lightbox = signal(false);
   protected guide = signal(false);
+  protected alertOpen = signal(false);
   protected shake = signal(false);
   protected openSection = signal(0);
   protected recent = signal<ProductCard[]>([]);
@@ -253,6 +264,8 @@ export class ProductPage {
     const p = this.p();
     return p?.old_price && p.old_price > this.price() ? Math.round((1 - this.price() / p.old_price) * 100) : 0;
   });
+  /** Some size of the selected colour is sold out — offer a back-in-stock alert. */
+  protected hasMissingSizes = computed(() => this.sizes().some((s) => !s.stock));
   protected inStock = computed(() => (this.p()?.variants ?? []).some((v) => v.stock > 0));
   protected maxQty = computed(() => Math.max(1, this.variant()?.stock ?? 1));
   protected wished = computed(() => {
