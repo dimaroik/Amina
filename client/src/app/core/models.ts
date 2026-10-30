@@ -75,6 +75,32 @@ export interface ProductDetail {
   variants: ProductVariant[];
   breadcrumbs: { name: string; slug: string }[];
   related: ProductCard[];
+  rating_count: number;
+  rating_avg: number | null;
+}
+
+export type ReviewFit = 'small' | 'true' | 'large';
+
+export interface Review {
+  id: number;
+  name: string;
+  rating: number;
+  text: string;
+  size: string;
+  height: number | null;
+  fit: ReviewFit | null;
+  photos: string[];
+  verified: boolean;
+  admin_reply: string;
+  created_at: string;
+}
+
+export interface ReviewsResponse {
+  summary: { count: number; avg: number; distribution: Record<1 | 2 | 3 | 4 | 5, number>; fit: Record<ReviewFit, number> };
+  items: Review[];
+  photos: { id: number; url: string }[];
+  page: number;
+  pages: number;
 }
 
 export interface ProductListResponse {

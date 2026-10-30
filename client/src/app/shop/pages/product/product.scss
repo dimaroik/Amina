@@ -102,3 +102,6 @@
 
 /* keep the floating chat button from covering the sticky add-to-cart button */
 @media (max-width: 599px) { .sticky-bar { padding-right: 84px; } }
+
+.rating { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--ink-2); }
+.rating:hover span { text-decoration: underline; text-underline-offset: 3px; }
