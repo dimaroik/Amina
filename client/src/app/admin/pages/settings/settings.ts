@@ -166,7 +166,10 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 <div class="field">
                   <label class="label">Telegram chat ID (через кому)</label>
                   <input class="input" [ngModel]="list(s.notifications.telegramAdminChatIds)" (ngModelChange)="s.notifications.telegramAdminChatIds = split($event)" placeholder="342585697" />
-                  <div class="adm-hint">Напишіть боту @if (i()?.telegramBot) { <a class="link-plain" [href]="'https://t.me/' + i()!.telegramBot" target="_blank">{{ '@' + i()!.telegramBot }}</a> } команду <b>/id</b> — він відповість вашим chat ID.</div>
+                  <div class="adm-hint">Тут потрібні цифри, а не ім'я бота чи каналу. Напишіть боту @if (i()?.telegramBot) { <a class="link-plain" [href]="'https://t.me/' + i()!.telegramBot" target="_blank">{{ '@' + i()!.telegramBot }}</a> } команду <b>/id</b> — він відповість вашим chat ID. Канал для постів вказується у вкладці «Telegram».</div>
+                  @if (badChatIds(s.notifications.telegramAdminChatIds).length) {
+                    <div class="adm-hint" style="color:var(--danger)">«{{ badChatIds(s.notifications.telegramAdminChatIds).join(', ') }}» — це не chat ID. Вкажіть числовий ID, наприклад 342585697.</div>
+                  }
                   <div class="adm-row">
                     <button class="btn btn-ghost btn-xs" (click)="test('telegram')"><app-icon name="send" [size]="13" /> Надіслати тест</button>
                     <button class="btn btn-ghost btn-xs" (click)="reconnectTelegram()"><app-icon name="refresh" [size]="13" /> Перепідключити бота</button>
@@ -324,6 +327,11 @@ export class SettingsPage {
     const link = this.jar(this.s()?.payment.monoJarUrl ?? '');
     if (!link) return this.qr.set('');
     QRCode.toDataURL(link, { margin: 1, width: 400, color: { dark: '#1f1d1a', light: '#ffffff' } }).then((d) => this.qr.set(d));
+  }
+
+  /** Admin chat IDs are numbers (groups are negative); names like @SomeBot can't receive messages from the bot. */
+  badChatIds(ids: string[]) {
+    return (ids ?? []).filter((id) => !/^-?\d{5,20}$/.test(id));
   }
 
   testChannel() {
