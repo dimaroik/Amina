@@ -11,7 +11,7 @@ import { UahPipe } from '../../../shared/uah.pipe';
   imports: [RouterLink, Icon, UahPipe],
   template: `
     <section class="container page">
-      <h1 class="h1">Кошик @if (cart.count()) { <sup class="muted">{{ cart.count() }}</sup> }</h1>
+      <h1 class="h1 title">Кошик @if (cart.count()) { <span class="count-badge" [attr.aria-label]="cart.count() + ' шт.'">{{ cart.count() }}</span> }</h1>
 
       @if (notes().length) {
         <div class="notes">
@@ -75,7 +75,9 @@ import { UahPipe } from '../../../shared/uah.pipe';
   `,
   styles: `
     .page { padding-top: 36px; padding-bottom: 96px; }
-    h1 { margin-bottom: 28px; } sup { font-family: var(--font-sans); font-size: 14px; }
+    h1 { margin-bottom: 28px; }
+    .title { display: flex; align-items: center; gap: 14px; }
+    .count-badge { min-width: 32px; height: 32px; padding: 0 10px; border-radius: 16px; background: var(--ink); color: var(--bg); font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1; display: inline-grid; place-items: center; font-variant-numeric: lining-nums tabular-nums; }
     .notes { display: flex; gap: 12px; padding: 14px 16px; background: #f4efe2; color: #6f5a2b; margin-bottom: 24px; font-size: 14px; p { margin: 0; } }
     .empty-state app-icon { margin: 0 auto 16px; }
     .layout { display: grid; gap: 40px; }
