@@ -62,6 +62,8 @@ export const config = {
     // Instagram publishing (Instagram API with Instagram Login — no Facebook Page needed)
     igAppId: env.INSTAGRAM_APP_ID ?? '',
     igAppSecret: env.INSTAGRAM_APP_SECRET ?? '',
+    // Facebook Login for Business configuration (new apps connect Instagram this way — «Unified login»)
+    loginConfigId: env.META_LOGIN_CONFIG_ID ?? '',
     // overridable only to test against local stubs
     graphUrl: env.META_GRAPH_URL ?? 'https://graph.facebook.com',
     igGraphUrl: env.INSTAGRAM_GRAPH_URL ?? 'https://graph.instagram.com',

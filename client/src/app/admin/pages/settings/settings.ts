@@ -10,8 +10,8 @@ import { AdminApi, type AdminSettings } from '../../admin-api';
 import { NpPicker } from '../../ui/np-picker';
 
 interface SocialStatus {
-  instagram: { configured: boolean; connected: { username: string; expiresAt: string } | null; redirectUri: string };
-  facebook: { configured: boolean; connected: { pageName: string; pageId: string } | null; pending: { id: string; name: string }[]; redirectUri: string };
+  instagram: { configured: boolean; connected: { username: string; expiresAt: string; via: 'instagram' | 'facebook' } | null; redirectUri: string };
+  facebook: { configured: boolean; businessLogin: boolean; connected: { pageName: string; pageId: string } | null; pending: { id: string; name: string }[]; redirectUri: string };
   https: boolean;
 }
 
@@ -223,7 +223,9 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   @if (social(); as so) {
                     @if (net.key === 'instagram') {
                       @if (so.instagram.connected; as c) {
-                        <p class="small" style="margin:0">Акаунт <b>{{ '@' + c.username }}</b>. Доступ оновлюється автоматично (до {{ c.expiresAt | date: 'd MMM y' }}).</p>
+                        <p class="small" style="margin:0">Акаунт <b>{{ '@' + c.username }}</b>@if (c.via === 'facebook') { — через сторінку Facebook } @else { . Доступ оновлюється автоматично (до {{ c.expiresAt | date: 'd MMM y' }}) }.</p>
+                      } @else if (so.facebook.connected) {
+                        <p class="adm-hint" style="margin:0;color:var(--warning)">До сторінки «{{ so.facebook.connected.pageName }}» не прив'язано Instagram. Прив'яжіть його (крок 1 інструкції) і натисніть «Підключити» ще раз.</p>
                       }
                     } @else {
                       @if (so.facebook.connected; as c) { <p class="small" style="margin:0">Сторінка <b>{{ c.pageName }}</b></p> }
@@ -234,37 +236,31 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                     }
                     <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social[net.key]" /><span class="track"></span> Автопостинг (ті самі події й час, що в Telegram)</label>
                     <div class="adm-row">
-                      <button class="btn btn-sm" [disabled]="!so[net.key].configured || !so.https" (click)="connect(net.key)">{{ connected(net.key) ? 'Перепідключити' : 'Підключити ' + net.title }}</button>
+                      <button class="btn btn-sm" [disabled]="!(so[net.key].configured || so.facebook.configured) || !so.https" (click)="connect(net.key)">{{ connected(net.key) ? 'Перепідключити' : so.instagram.configured ? 'Підключити ' + net.title : 'Підключити Facebook та Instagram' }}</button>
                       @if (connected(net.key)) { <button class="btn btn-ghost btn-xs" (click)="disconnect(net.key)">Відключити</button> }
                     </div>
                     @if (!so.https) { <p class="adm-hint" style="margin:0;color:var(--warning)">Працює лише на опублікованому сайті з https.</p> }
-                    @if (!so[net.key].configured) {
+                    @if (!so[net.key].configured && !so.facebook.configured) {
                       <p class="adm-hint" style="margin:0;color:var(--warning)">Спершу створіть застосунок Meta й додайте ключі на Render — інструкція нижче.</p>
                     }
-                    <details class="guide" [open]="!so[net.key].configured">
-                      <summary>Як підключити (один раз, ~15 хв)</summary>
-                      @if (net.key === 'instagram') {
-                        <ol class="steps small">
-                          <li>В Instagram: Налаштування → Тип акаунта → <b>професійний</b> (Business або «Автор»).</li>
-                          <li>Відкрийте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → «Створити застосунок» (тип Business; сценарій — керування контентом в Instagram).</li>
-                          <li>У застосунку: продукт <b>Instagram</b> → «API setup with Instagram login».</li>
-                          <li>У «Business login settings» → OAuth redirect URI вставте:<br><code class="copy" (click)="copy(so.instagram.redirectUri)">{{ so.instagram.redirectUri }}</code></li>
-                          <li>«App roles» → додайте свій Instagram як <b>Instagram Tester</b> і прийміть запрошення в Instagram (Налаштування → Застосунки й вебсайти).</li>
-                          <li>Скопіюйте <b>Instagram app ID</b> і <b>Instagram app secret</b> → Render → Environment: <code>INSTAGRAM_APP_ID</code>, <code>INSTAGRAM_APP_SECRET</code>.</li>
-                          <li>Після перезапуску натисніть «Підключити Instagram» і дозвольте доступ.</li>
-                        </ol>
-                      } @else {
-                        <ol class="steps small">
-                          <li>Сторінка Facebook магазину, якою ви керуєте (Business Suite → створити сторінку, якщо немає).</li>
-                          <li>У тому самому застосунку Meta додайте продукт <b>Facebook Login for Business</b> (або «Facebook Login»).</li>
-                          <li>Valid OAuth Redirect URIs:<br><code class="copy" (click)="copy(so.facebook.redirectUri)">{{ so.facebook.redirectUri }}</code></li>
-                          <li>App settings → Basic: <b>App ID</b> і <b>App Secret</b> → Render: <code>META_APP_ID</code>, <code>META_APP_SECRET</code>.</li>
-                          <li>Натисніть «Підключити Facebook», увійдіть, оберіть сторінку й дозвольте публікацію.</li>
-                        </ol>
-                      }
-                      <p class="adm-hint" style="margin:0">Назви пунктів у кабінеті Meta іноді змінюються — якщо щось виглядає інакше, надішліть скріншот. Перевірку застосунку (App Review) проходити не треба: ви публікуєте у власні акаунти.</p>
-                    </details>
+
                   }
+                </div>
+              }
+              @if (social(); as so) {
+                <div class="adm-card pad adm-stack" style="gap:12px">
+                  <div class="adm-section-title">Як підключити (один раз)</div>
+                  <p class="small" style="margin:0">Нові застосунки Meta підключають Instagram через вхід Facebook: публікуємо через сторінку Facebook, до якої прив'язаний Instagram. Одна кнопка підключає обидві мережі.</p>
+                  <ol class="steps small">
+                    <li><b>Сторінка Facebook + Instagram.</b> Instagram — професійний. Створіть сторінку магазину у Facebook і прив'яжіть до неї Instagram: сторінка → Налаштування → <b>Пов'язані облікові записи</b> → Instagram → Підключити (або Meta Business Suite → Налаштування → Облікові записи Instagram).</li>
+                    <li>У застосунку Meta: <b>Facebook Login for Business → Settings</b> → «Valid OAuth Redirect URIs»:<br><code class="copy" (click)="copy(so.facebook.redirectUri)">{{ so.facebook.redirectUri }}</code></li>
+                    <li><b>Facebook Login for Business → Configurations → Create</b>: тип токена «User access token»; ресурси — <b>Сторінки</b> та <b>Облікові записи Instagram</b>; дозволи — <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>business_management</code>. Скопіюйте <b>Configuration ID</b>.</li>
+                    <li><b>App settings → Basic</b>: App ID і App Secret.</li>
+                    <li>Render → Environment: <code>META_APP_ID</code>, <code>META_APP_SECRET</code>, <code>META_LOGIN_CONFIG_ID</code> (Configuration ID) → Save.</li>
+                    <li>Тут натисніть «Підключити Facebook та Instagram», увійдіть і виберіть сторінку та Instagram магазину.</li>
+                  </ol>
+                  @if (so.facebook.configured && !so.facebook.businessLogin) { <p class="adm-hint" style="margin:0;color:var(--warning)">META_LOGIN_CONFIG_ID не вказано — вхід піде зі стандартним набором дозволів. Якщо Meta відповість помилкою, додайте Configuration ID.</p> }
+                  <p class="adm-hint" style="margin:0">Назви пунктів у кабінеті Meta іноді змінюються — якщо щось виглядає інакше, надішліть скріншот. Поки застосунок у режимі розробки, публікувати можна у власні акаунти (ви — адміністратор застосунку).</p>
                 </div>
               }
               <div class="adm-card pad adm-stack" style="gap:12px">

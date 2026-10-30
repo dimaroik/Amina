@@ -17,7 +17,7 @@ import {
 } from '../../services/channel.js';
 import { codSummary, markCodPaid, PHONE_KEY_SQL, phoneKey, setPrepayOnly } from '../../services/cod.js';
 import { sendTelegram, telegramEnabled } from '../../services/notify/telegram.js';
-import { authUrl, chooseFacebookPage, connectedNetworks, deleteSecret, fbConfigured, igConfigured, socialStatus } from '../../services/social.js';
+import { authUrl, chooseFacebookPage, connectedNetworks, deleteSecret, fbConfigured, getSecret, igConfigured, socialStatus } from '../../services/social.js';
 import { addHistory } from '../../services/orders.js';
 import { getSettings } from '../../services/settings.js';
 import { badRequest, HttpError } from '../../utils/errors.js';
@@ -161,9 +161,11 @@ adminTelegramCodRouter.get('/social', async (_req, res) => {
 });
 
 adminTelegramCodRouter.get('/social/connect/:net', async (req, res) => {
-  const net = z.enum(['instagram', 'facebook']).parse(req.params.net);
+  let net = z.enum(['instagram', 'facebook']).parse(req.params.net);
+  // new Meta apps connect Instagram through Facebook Login for Business (the Instagram linked to the Page)
+  if (net === 'instagram' && !igConfigured() && fbConfigured()) net = 'facebook';
   if (net === 'instagram' ? !igConfigured() : !fbConfigured()) {
-    throw badRequest(net === 'instagram' ? 'Додайте INSTAGRAM_APP_ID і INSTAGRAM_APP_SECRET на Render' : 'Додайте META_APP_ID і META_APP_SECRET на Render');
+    throw badRequest('Додайте META_APP_ID і META_APP_SECRET на Render');
   }
   res.json({ url: authUrl(net, req.user!.id) });
 });
@@ -180,7 +182,11 @@ adminTelegramCodRouter.post('/social/facebook/page', async (req, res) => {
 adminTelegramCodRouter.delete('/social/:net', async (req, res) => {
   const net = z.enum(['instagram', 'facebook']).parse(req.params.net);
   await deleteSecret(net);
-  if (net === 'facebook') await deleteSecret('facebook_pages');
+  if (net === 'facebook') {
+    await deleteSecret('facebook_pages');
+    // Instagram connected through this Page stops working with it
+    if ((await getSecret<{ via?: string }>('instagram'))?.via === 'facebook') await deleteSecret('instagram');
+  }
   res.json({ ok: true });
 });
 

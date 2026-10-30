@@ -12,6 +12,9 @@ export interface InstagramAccount {
   userId: string;
   username: string;
   token: string;
+  /** 'instagram' — Instagram Login (graph.instagram.com, token refreshed weekly);
+   *  'facebook' — Facebook Login for Business: the account linked to the connected Page, published with the Page token */
+  via?: 'instagram' | 'facebook';
   /** long-lived tokens live 60 days and are refreshed weekly */
   expiresAt: string;
   refreshedAt: string;
@@ -80,6 +83,9 @@ export function checkState(net: SocialNet, value: string): boolean {
   }
 }
 
+/** Page posting plus Instagram publishing through the Instagram account linked to the Page. */
+const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management';
+
 export function authUrl(net: SocialNet, adminId: number): string {
   if (net === 'instagram') {
     const u = new URL('https://www.instagram.com/oauth/authorize');
@@ -93,7 +99,14 @@ export function authUrl(net: SocialNet, adminId: number): string {
   const u = new URL('https://www.facebook.com/dialog/oauth');
   u.searchParams.set('client_id', config.meta.appId);
   u.searchParams.set('redirect_uri', redirectUri('facebook'));
-  u.searchParams.set('scope', 'pages_show_list,pages_read_engagement,pages_manage_posts');
+  if (config.meta.loginConfigId) {
+    // Facebook Login for Business: permissions and assets come from the configuration made in the app dashboard
+    u.searchParams.set('config_id', config.meta.loginConfigId);
+    u.searchParams.set('response_type', 'code');
+    u.searchParams.set('override_default_response_type', 'true');
+  } else {
+    u.searchParams.set('scope', FB_SCOPES);
+  }
   u.searchParams.set('state', state('facebook', adminId));
   return u.toString();
 }
@@ -139,16 +152,16 @@ export async function connectFacebook(code: string): Promise<{ connected: Facebo
     client_secret: config.meta.appSecret,
     fb_exchange_token: short.access_token,
   });
-  const pages = await meta<{ data: { id: string; name: string; access_token: string }[] }>(`${config.meta.graphUrl}/me/accounts`, {
-    fields: 'id,name,access_token',
+  const pages = await meta<{ data: PageRow[] }>(`${config.meta.graphUrl}/me/accounts`, {
+    fields: 'id,name,access_token,instagram_business_account{id,username}',
     limit: '50',
     access_token: long.access_token,
   });
-  if (!pages.data.length) throw new MetaError('Не знайдено жодної сторінки Facebook, якою ви керуєте');
-  if (pages.data.length === 1) {
-    const p = pages.data[0]!;
-    const acc = { pageId: p.id, pageName: p.name, pageToken: p.access_token };
-    await setSecret('facebook', acc);
+  if (!pages.data.length) throw new MetaError('Не знайдено жодної сторінки Facebook, до якої ви дали доступ');
+  // the Page with a linked Instagram account is almost always the shop's one
+  const withIg = pages.data.filter((p) => p.instagram_business_account);
+  if (pages.data.length === 1 || withIg.length === 1) {
+    const acc = await usePage(withIg[0] ?? pages.data[0]!);
     await deleteSecret('facebook_pages');
     return { connected: acc, pages: [] };
   }
@@ -156,12 +169,41 @@ export async function connectFacebook(code: string): Promise<{ connected: Facebo
   return { connected: null, pages: pages.data.map(({ id, name }) => ({ id, name })) };
 }
 
-export async function chooseFacebookPage(pageId: string): Promise<FacebookAccount> {
-  const pages = (await getSecret<{ id: string; name: string; access_token: string }[]>('facebook_pages')) ?? [];
-  const p = pages.find((x) => x.id === pageId);
-  if (!p) throw new MetaError('Сторінку не знайдено — підключіть Facebook ще раз');
+interface PageRow {
+  id: string;
+  name: string;
+  access_token: string;
+  instagram_business_account?: { id: string; username?: string };
+}
+
+/** Saves the Page and, when an Instagram account is linked to it, connects Instagram through the same Page token. */
+async function usePage(p: PageRow): Promise<FacebookAccount> {
   const acc = { pageId: p.id, pageName: p.name, pageToken: p.access_token };
   await setSecret('facebook', acc);
+  const ig = p.instagram_business_account;
+  const current = await getSecret<InstagramAccount>('instagram');
+  if (ig && current?.via !== 'instagram') {
+    let username = ig.username ?? '';
+    if (!username) {
+      username = (await meta<{ username?: string }>(`${config.meta.graphUrl}/${ig.id}`, { fields: 'username', access_token: p.access_token }).catch(() => ({ username: '' }))).username ?? '';
+    }
+    await setSecret('instagram', {
+      userId: ig.id,
+      username,
+      token: p.access_token,
+      via: 'facebook',
+      expiresAt: '',
+      refreshedAt: new Date().toISOString(),
+    } satisfies InstagramAccount);
+  }
+  return acc;
+}
+
+export async function chooseFacebookPage(pageId: string): Promise<FacebookAccount> {
+  const pages = (await getSecret<PageRow[]>('facebook_pages')) ?? [];
+  const p = pages.find((x) => x.id === pageId);
+  if (!p) throw new MetaError('Сторінку не знайдено — підключіть Facebook ще раз');
+  const acc = await usePage(p);
   await deleteSecret('facebook_pages');
   return acc;
 }
@@ -169,7 +211,8 @@ export async function chooseFacebookPage(pageId: string): Promise<FacebookAccoun
 /** Instagram tokens expire after 60 days unless refreshed; refreshing weekly keeps them alive. */
 export async function refreshInstagramToken(force = false): Promise<void> {
   const acc = await getSecret<InstagramAccount>('instagram');
-  if (!acc) return;
+  // Page tokens from Facebook Login don't expire
+  if (!acc || acc.via === 'facebook') return;
   if (!force && Date.now() - new Date(acc.refreshedAt).getTime() < 7 * 86_400_000) return;
   const r = await meta<{ access_token: string; expires_in: number }>(`${config.meta.igGraphUrl}/refresh_access_token`, {
     grant_type: 'ig_refresh_token',
@@ -185,8 +228,18 @@ export async function socialStatus() {
     getSecret<{ id: string; name: string }[]>('facebook_pages'),
   ]);
   return {
-    instagram: { configured: igConfigured(), connected: ig ? { username: ig.username, expiresAt: ig.expiresAt } : null, redirectUri: redirectUri('instagram') },
-    facebook: { configured: fbConfigured(), connected: fb ? { pageName: fb.pageName, pageId: fb.pageId } : null, pending: (pages ?? []).map(({ id, name }) => ({ id, name })), redirectUri: redirectUri('facebook') },
+    instagram: {
+      configured: igConfigured(),
+      connected: ig ? { username: ig.username, expiresAt: ig.expiresAt, via: ig.via ?? 'instagram' } : null,
+      redirectUri: redirectUri('instagram'),
+    },
+    facebook: {
+      configured: fbConfigured(),
+      businessLogin: Boolean(config.meta.loginConfigId),
+      connected: fb ? { pageName: fb.pageName, pageId: fb.pageId } : null,
+      pending: (pages ?? []).map(({ id, name }) => ({ id, name })),
+      redirectUri: redirectUri('facebook'),
+    },
     https: config.publicUrl.startsWith('https://'),
   };
 }
@@ -261,9 +314,12 @@ async function plainCaption(productId: number, kind: PostKind, net: SocialNet): 
 
 // ---------- publishing ----------
 
-async function waitForContainer(id: string, token: string): Promise<void> {
+/** Instagram Login accounts live on graph.instagram.com, Page-linked ones on graph.facebook.com. */
+const igHost = (acc: InstagramAccount) => (acc.via === 'facebook' ? config.meta.graphUrl : config.meta.igGraphUrl);
+
+async function waitForContainer(host: string, id: string, token: string): Promise<void> {
   for (let i = 0; i < 20; i++) {
-    const r = await meta<{ status_code?: string }>(`${config.meta.igGraphUrl}/${id}`, { fields: 'status_code', access_token: token });
+    const r = await meta<{ status_code?: string }>(`${host}/${id}`, { fields: 'status_code', access_token: token });
     if (!r.status_code || r.status_code === 'FINISHED') return;
     if (r.status_code === 'ERROR' || r.status_code === 'EXPIRED') throw new MetaError('Instagram не зміг обробити фото');
     await new Promise((res) => setTimeout(res, 3000));
@@ -276,7 +332,8 @@ async function instagramPublish(urls: string[], caption: string): Promise<{ id: 
   const acc = await getSecret<InstagramAccount>('instagram');
   if (!acc) throw new MetaError('Instagram не підключено');
   if (!urls.length) throw new MetaError('Для Instagram потрібне хоча б одне фото товару');
-  const base = `${config.meta.igGraphUrl}/${acc.userId}`;
+  const host = igHost(acc);
+  const base = `${host}/${acc.userId}`;
   let container: string;
   if (urls.length === 1) {
     container = (await meta<{ id: string }>(`${base}/media`, { image_url: urls[0]!, caption, access_token: acc.token }, 'POST')).id;
@@ -285,10 +342,10 @@ async function instagramPublish(urls: string[], caption: string): Promise<{ id: 
     for (const image_url of urls.slice(0, 10)) {
       children.push((await meta<{ id: string }>(`${base}/media`, { image_url, is_carousel_item: 'true', access_token: acc.token }, 'POST')).id);
     }
-    for (const c of children) await waitForContainer(c, acc.token);
+    for (const c of children) await waitForContainer(host, c, acc.token);
     container = (await meta<{ id: string }>(`${base}/media`, { media_type: 'CAROUSEL', children: children.join(','), caption, access_token: acc.token }, 'POST')).id;
   }
-  await waitForContainer(container, acc.token);
+  await waitForContainer(host, container, acc.token);
   const published = await meta<{ id: string }>(`${base}/media_publish`, { creation_id: container, access_token: acc.token }, 'POST');
   return { id: published.id, account: acc.userId };
 }
