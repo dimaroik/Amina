@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
+import { setupAdminCommands } from '../../services/admin-bot.js';
 import { z, type ZodObject, type ZodRawShape } from 'zod';
 import { config } from '../../config.js';
 import { one, query } from '../../db/pool.js';
@@ -242,6 +243,15 @@ adminMiscRouter.put('/settings', async (req, res) => {
         })
         .partial()
         .optional(),
+      channel: z
+        .object({
+          chatId: z.union([z.string().trim().regex(/^(@[A-Za-z0-9_]{4,64}|-?\d{5,20})$/, 'Канал: @назва або числовий ID (-100…)'), z.literal('')]),
+          postOnReceive: z.boolean(),
+          postOnAnnounce: z.boolean(),
+          buttonText: z.string().trim().min(1).max(40),
+        })
+        .partial()
+        .optional(),
       novaPoshta: z
         .object({
           senderCityRef: z.string().trim().max(60),
@@ -258,7 +268,10 @@ adminMiscRouter.put('/settings', async (req, res) => {
         .optional(),
     })
     .parse(req.body);
-  res.json(await updateSettings(body as any));
+  const saved = await updateSettings(body as any);
+  // the bot menu with admin commands is set per admin chat
+  if (body.notifications) setupAdminCommands().catch(() => undefined);
+  res.json(saved);
 });
 
 adminMiscRouter.post('/settings/test-notification', async (req, res) => {

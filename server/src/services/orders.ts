@@ -101,3 +101,10 @@ export function publicOrder(o: OrderRow) {
 
 /** SQL condition: the order line waits for an open shipment, so it holds no stock. */
 export const PENDING_PREORDER_SQL = `EXISTS (SELECT 1 FROM shipments s WHERE s.id = oi.preorder_shipment_id AND s.status = 'in_transit')`;
+
+/** «очікується ~14 листопада» (server-side copy of the storefront wording). */
+export function preorderWhenText(eta: string | null): string {
+  if (!eta) return 'очікується найближчим часом';
+  const d = new Date(`${eta}T12:00:00`);
+  return `очікується ~${d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`;
+}

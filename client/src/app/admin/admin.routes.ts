@@ -25,6 +25,7 @@ export const ADMIN_ROUTES: Routes = [
       { path: 'products/new', title: 'Новий товар — Amina Admin', canDeactivate: [unsavedGuard], loadComponent: () => import('./pages/products/product-editor').then((m) => m.ProductEditorPage) },
       { path: 'products/:id', title: 'Товар — Amina Admin', canDeactivate: [unsavedGuard], loadComponent: () => import('./pages/products/product-editor').then((m) => m.ProductEditorPage) },
       { path: 'shipments', title: 'Поставки — Amina Admin', loadComponent: () => import('./pages/shipments/shipments-list').then((m) => m.ShipmentsListPage) },
+      { path: 'cod', title: 'Накладений платіж — Amina Admin', loadComponent: () => import('./pages/cod/cod').then((m) => m.CodPage) },
       { path: 'restock', title: 'Що дозамовити — Amina Admin', loadComponent: () => import('./pages/restock/restock').then((m) => m.RestockPage) },
       { path: 'shipments/:id', title: 'Поставка — Amina Admin', loadComponent: () => import('./pages/shipments/shipment-detail').then((m) => m.ShipmentDetailPage) },
       { path: 'categories', title: 'Категорії — Amina Admin', loadComponent: () => import('./pages/categories/categories').then((m) => m.CategoriesPage) },

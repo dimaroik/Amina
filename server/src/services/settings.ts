@@ -25,6 +25,8 @@ export interface PaymentSettings {
   edrpou: string;
   bankName: string;
   paymentPurpose: string;
+  /** cash on delivery is switched off for a phone after this many parcels were not picked up (0 — never) */
+  codBlockAfterRefusals: number;
 }
 
 export interface NotificationSettings {
@@ -60,6 +62,14 @@ export interface NovaPoshtaSettings {
   autoTrack: boolean;
 }
 
+export interface ChannelSettings {
+  /** @channelname or numeric id of the store's Telegram channel (the bot must be its admin) */
+  chatId: string;
+  postOnReceive: boolean;
+  postOnAnnounce: boolean;
+  buttonText: string;
+}
+
 export interface Settings {
   store: StoreSettings;
   payment: PaymentSettings;
@@ -67,6 +77,7 @@ export interface Settings {
   chatbot: ChatbotSettings;
   analytics: AnalyticsSettings;
   novaPoshta: NovaPoshtaSettings;
+  channel: ChannelSettings;
 }
 
 export const defaultSettings: Settings = {
@@ -95,6 +106,7 @@ export const defaultSettings: Settings = {
     edrpou: '',
     bankName: 'monobank',
     paymentPurpose: 'Оплата замовлення {number}',
+    codBlockAfterRefusals: 2,
   },
   notifications: {
     adminEmails: [],
@@ -118,6 +130,12 @@ export const defaultSettings: Settings = {
     defaultDescription: 'Одяг',
     payer: 'Recipient',
     autoTrack: true,
+  },
+  channel: {
+    chatId: '',
+    postOnReceive: true,
+    postOnAnnounce: true,
+    buttonText: 'Замовити на сайті',
   },
   chatbot: {
     enabled: true,

@@ -5,12 +5,17 @@ import { orderStatusLabel, type OrderStatus } from '../services/labels.js';
 import { addHistory } from '../services/orders.js';
 import { escapeHtml, sendTelegram, telegramEnabled, telegramWebhookPath } from '../services/notify/telegram.js';
 import { verifyViberSignature, viberEnabled } from '../services/notify/viber.js';
+import { handleAdminCallback, handleAdminCommand } from '../services/admin-bot.js';
 
 export const messengersRouter = Router();
 
 messengersRouter.post('/webhooks/telegram/:secret', express.json(), async (req, res) => {
   res.json({ ok: true });
   if (!telegramEnabled() || req.params.secret !== telegramWebhookPath()) return;
+  if (req.body?.callback_query) {
+    await handleAdminCallback(req.body.callback_query).catch((err) => console.error('[telegram callback]', err));
+    return;
+  }
   const msg = req.body?.message;
   const chatId = msg?.chat?.id ? String(msg.chat.id) : '';
   const text: string = msg?.text ?? '';
@@ -42,6 +47,7 @@ messengersRouter.post('/webhooks/telegram/:secret', express.json(), async (req, 
         return;
       }
     }
+    if (await handleAdminCommand(chatId, text)) return;
     if (text.startsWith('/id')) {
       await sendTelegram(chatId, `Ваш chat ID: <code>${chatId}</code>\nДодайте його в адмінці → Налаштування → Сповіщення, щоб отримувати нові замовлення.`);
       return;

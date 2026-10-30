@@ -4,10 +4,11 @@ import { one, query, tx } from '../../db/pool.js';
 import { ORDER_STATUSES, PAYMENT_STATUSES, orderStatusLabel, paymentStatusLabel } from '../../services/labels.js';
 import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js';
 import { addHistory, getOrderFull, PENDING_PREORDER_SQL } from '../../services/orders.js';
+import { createOrderWaybill, syncStock } from '../../services/order-actions.js';
+import { phoneRisk } from '../../services/cod.js';
 import { processStockAlerts } from '../../services/stock-alerts.js';
 import { syncTracking } from '../../services/np-tracking.js';
-import { createRecipient, createWaybill, deleteWaybill, getSender, NovaPoshtaError, waybillPdf } from '../../services/novaposhta.js';
-import { getSettings } from '../../services/settings.js';
+import { deleteWaybill, getSender, NovaPoshtaError, waybillPdf } from '../../services/novaposhta.js';
 import { HttpError } from '../../utils/errors.js';
 import { badRequest, notFound } from '../../utils/errors.js';
 
@@ -109,7 +110,7 @@ adminOrdersRouter.get('/orders/:id', async (req, res) => {
       [order.customer_phone],
     ),
   ]);
-  res.json({ ...order, history, notifications, customerStats: customerOrders });
+  res.json({ ...order, history, notifications, customerStats: { ...customerOrders, ...(await phoneRisk(order.customer_phone, order.id)) } });
 });
 
 const patchSchema = z.object({
@@ -129,21 +130,6 @@ const patchSchema = z.object({
   notify: z.boolean().default(true),
   note: z.string().max(1000).default(''),
 });
-
-/** Returns stock when an order moves into a cancelled/returned state, and takes it back when restored. */
-async function syncStock(client: import('pg').PoolClient, orderId: number, from: string, to: string) {
-  const released = (s: string) => s === 'cancelled' || s === 'returned';
-  if (released(from) === released(to)) return;
-  const sign = released(to) ? 1 : -1;
-  // lines pre-ordered from a shipment still on the way never took stock
-  await client.query(
-    `UPDATE product_variants v SET stock = GREATEST(0, v.stock + $2 * t.qty)
-     FROM (SELECT oi.variant_id, SUM(oi.quantity) AS qty FROM order_items oi
-           WHERE oi.order_id = $1 AND oi.variant_id IS NOT NULL AND NOT ${PENDING_PREORDER_SQL} GROUP BY oi.variant_id) t
-     WHERE v.id = t.variant_id`,
-    [orderId, sign],
-  );
-}
 
 adminOrdersRouter.patch('/orders/:id', async (req, res) => {
   const id = Number(req.params.id);
@@ -314,44 +300,11 @@ const ttnSchema = z.object({
 adminOrdersRouter.post('/orders/:id/ttn', async (req, res) => {
   const id = Number(req.params.id);
   const body = ttnSchema.parse(req.body);
-  const order = await one('SELECT * FROM orders WHERE id = $1', [id]);
-  if (!order) throw notFound('Замовлення не знайдено');
-  if (order.np_ttn_ref) throw badRequest('Для цього замовлення ТТН уже створено');
-  const s = (await getSettings()).novaPoshta;
-  if (!s.senderCityRef || !s.senderWarehouseRef || !s.senderPhone) {
-    throw badRequest('Спершу вкажіть відділення відправки й телефон у Налаштування → Нова пошта');
-  }
   let doc;
   try {
-    const sender = await getSender();
-    const recipient = await createRecipient(body.firstName, body.lastName, body.phone);
-    doc = await createWaybill({
-      sender: { ref: sender.ref, contactRef: sender.contactRef, cityRef: s.senderCityRef, warehouseRef: s.senderWarehouseRef, phone: s.senderPhone },
-      recipient: { ref: recipient.ref, contactRef: recipient.contactRef, cityRef: body.cityRef, warehouseRef: body.warehouseRef, phone: body.phone },
-      weight: body.weight,
-      declaredValue: body.declaredValue,
-      description: body.description,
-      payer: body.payer,
-      codAmount: body.codAmount,
-    });
+    doc = await createOrderWaybill(id, body, req.user!.name || req.user!.email);
   } catch (err) {
     npError(err);
-  }
-  const author = req.user!.name || req.user!.email;
-  await query(
-    `UPDATE orders SET tracking_number = $2, np_ttn_ref = $3, np_status = 'Створено', np_status_code = '1', np_status_at = now(),
-       delivery_city_ref = $4, delivery_branch_ref = $5,
-       delivery_city = CASE WHEN $6 <> '' THEN $6 ELSE delivery_city END,
-       delivery_branch = CASE WHEN $7 <> '' THEN $7 ELSE delivery_branch END,
-       updated_at = now()
-     WHERE id = $1`,
-    [id, doc.IntDocNumber, doc.Ref, body.cityRef, body.warehouseRef, body.cityName, body.warehouseName],
-  );
-  await addHistory(id, 'tracking', `Створено ТТН ${doc.IntDocNumber}${doc.CostOnSite ? ` · доставка ≈ ${doc.CostOnSite} ₴` : ''}`, author);
-  if (body.markShipped && order.status !== 'shipped') {
-    await query("UPDATE orders SET status = 'shipped', updated_at = now() WHERE id = $1", [id]);
-    await addHistory(id, 'status', `${order.status === 'new' ? 'Нове' : 'Статус'} → Відправлене`, author);
-    fireAndForget(notifyOrderStatus(id, { statusChanged: true }));
   }
   res.status(201).json({ number: doc.IntDocNumber, cost: doc.CostOnSite, estimatedDelivery: doc.EstimatedDeliveryDate, order: await getOrderFull(id) });
 });
@@ -365,7 +318,10 @@ adminOrdersRouter.delete('/orders/:id/ttn', async (req, res) => {
   } catch (err) {
     npError(err);
   }
-  await query("UPDATE orders SET tracking_number = '', np_ttn_ref = NULL, np_status = '', np_status_code = '', updated_at = now() WHERE id = $1", [id]);
+  await query(
+    "UPDATE orders SET tracking_number = '', np_ttn_ref = NULL, np_status = '', np_status_code = '', cod_amount = 0, cod_status = 'none', updated_at = now() WHERE id = $1",
+    [id],
+  );
   await addHistory(id, 'tracking', `ТТН ${order.tracking_number} видалено`, req.user!.name || req.user!.email);
   res.json(await getOrderFull(id));
 });

@@ -82,7 +82,11 @@ export interface AdminOrder {
   items: AdminOrderItem[];
   history?: { id: number; action: string; note: string; author: string; created_at: string }[];
   notifications?: { id: number; channel: string; recipient: string; subject: string; status: string; error: string | null; created_at: string }[];
-  customerStats?: { count: number; spent: number };
+  customerStats?: { count: number; spent: number; refusals?: number; prepay_only?: boolean; manual?: boolean; note?: string };
+  cod_amount?: number;
+  cod_status?: 'none' | 'awaiting' | 'collected' | 'paid_out' | 'refused';
+  cod_paid_at?: string | null;
+  refused_at?: string | null;
 }
 
 export interface AdminProductRow {
@@ -197,7 +201,8 @@ export interface PromoCode {
 export interface AdminSettings {
   settings: {
     store: Record<string, string>;
-    payment: { monoJarUrl: string; iban: string; recipient: string; edrpou: string; bankName: string; paymentPurpose: string };
+    payment: { monoJarUrl: string; iban: string; recipient: string; edrpou: string; bankName: string; paymentPurpose: string; codBlockAfterRefusals: number };
+    channel: { chatId: string; postOnReceive: boolean; postOnAnnounce: boolean; buttonText: string };
     notifications: {
       adminEmails: string[];
       telegramAdminChatIds: string[];

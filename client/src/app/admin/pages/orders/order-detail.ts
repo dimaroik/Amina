@@ -24,6 +24,7 @@ interface EditItem {
   quantity: number;
 }
 
+const COD_LABELS: Record<string, string> = { awaiting: 'посилка в дорозі', collected: 'клієнт оплатив, гроші йдуть', paid_out: 'гроші отримано', refused: 'посилку не забрали' };
 const CHANNEL_LABELS: Record<string, string> = { phone: 'Дзвінок', telegram: 'Telegram', viber: 'Viber', whatsapp: 'WhatsApp', email: 'Email' };
 const HISTORY_ICONS: Record<string, string> = { created: 'sparkle', status: 'refresh', payment: 'card', tracking: 'truck', items: 'box', message: 'chat', edit: 'edit', telegram_linked: 'telegram', viber_linked: 'viber', payment_error: 'info', preorder: 'parcel' };
 
@@ -47,6 +48,7 @@ export class OrderDetailPage {
   protected paymentLabels = PAYMENT_STATUS_LABELS;
   protected channelLabels = CHANNEL_LABELS;
   protected historyIcons = HISTORY_ICONS;
+  protected codLabels = COD_LABELS;
   protected progress = [...ORDER_PROGRESS, 'completed'] as OrderStatus[];
 
   protected order = signal<AdminOrder | null>(null);
@@ -268,6 +270,16 @@ export class OrderDetailPage {
         this.apply(o);
         this.load();
         this.toasts.success('ТТН видалено');
+      },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  codPaid() {
+    this.api.post(`/cod/${this.id()}/paid`, {}).subscribe({
+      next: () => {
+        this.toasts.success('Позначено: гроші отримано');
+        this.load();
       },
       error: (e) => this.toasts.error(errorMessage(e)),
     });

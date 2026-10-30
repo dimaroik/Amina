@@ -209,6 +209,12 @@
                   <a class="icon-btn" [href]="tgLink()" target="_blank" title="Telegram"><app-icon name="telegram" [size]="17" /></a>
                 </div>
                 @if (o.customerStats; as cs) {
+                  @if (cs.prepay_only || cs.refusals) {
+                    <div class="risk">
+                      <app-icon name="info" [size]="15" />
+                      <span>@if (cs.refusals) { Раніше не забрали посилку: <b>{{ cs.refusals }}</b>. }@if (cs.prepay_only) { <b>Для цього номера — лише передоплата.</b> }</span>
+                    </div>
+                  }
                   <a class="stats" [routerLink]="['/admin/orders']" [queryParams]="{ q: o.customer_phone }">
                     {{ cs.count }} замовл. · {{ cs.spent | uah }} <app-icon name="chevron-right" [size]="14" />
                   </a>
@@ -254,6 +260,12 @@
                   <div class="adm-between"><span class="small"><b>ТТН {{ o.tracking_number }}</b></span>
                     @if (o.np_status) { <span class="adm-pill">{{ o.np_status }}</span> }</div>
                   @if (o.np_status_at) { <span class="tiny adm-muted">Оновлено {{ o.np_status_at | date: 'd MMM, HH:mm' }}</span> }
+                  @if (o.cod_status && o.cod_status !== 'none') {
+                    <div class="cod" [class]="'cod ' + o.cod_status">
+                      <span>Накладений платіж {{ o.cod_amount | uah }}: <b>{{ codLabels[o.cod_status] }}</b></span>
+                      @if (o.cod_status === 'awaiting' || o.cod_status === 'collected') { <button class="btn btn-ghost btn-xs" (click)="codPaid()">Гроші отримано</button> }
+                    </div>
+                  }
                   <div class="adm-row" style="gap:6px">
                     <button class="btn btn-ghost btn-xs" (click)="openTtn('marking')">Наліпка 100×100</button>
                     <button class="btn btn-ghost btn-xs" (click)="openTtn('document')">Друк ТТН</button>

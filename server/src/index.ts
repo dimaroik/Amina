@@ -24,10 +24,12 @@ import { reviewsRouter } from './routes/reviews.js';
 import { adminReviewsRouter } from './routes/admin/reviews.js';
 import { adminShipmentsRouter } from './routes/admin/shipments.js';
 import { adminInsightsRouter } from './routes/admin/insights.js';
+import { adminTelegramCodRouter } from './routes/admin/telegram-cod.js';
 import { stockAlertsRouter } from './routes/stock-alerts.js';
 import { processStockAlerts } from './services/stock-alerts.js';
 import { startTrackingJob } from './services/np-tracking.js';
 import { setupTelegramWebhook } from './services/notify/telegram.js';
+import { setupAdminCommands } from './services/admin-bot.js';
 import { setupViberWebhook } from './services/notify/viber.js';
 import { errorHandler, HttpError } from './utils/errors.js';
 
@@ -60,7 +62,7 @@ export function createApp() {
   api.use(chatRouter);
   api.use(stockAlertsRouter);
   api.use(reviewsRouter);
-  api.use('/admin', requireAdmin, adminOrdersRouter, adminCatalogRouter, adminMiscRouter, adminReviewsRouter, adminShipmentsRouter, adminInsightsRouter);
+  api.use('/admin', requireAdmin, adminOrdersRouter, adminCatalogRouter, adminMiscRouter, adminReviewsRouter, adminShipmentsRouter, adminInsightsRouter, adminTelegramCodRouter);
   api.use((_req, _res, next) => next(new HttpError(404, 'Маршрут не знайдено')));
   api.use(errorHandler);
   app.use('/api', api);
@@ -86,7 +88,10 @@ async function main() {
   app.listen(config.port, () => {
     console.log(`Amina API listening on :${config.port} (${config.publicUrl})`);
   });
-  void withRetries('telegram', setupTelegramWebhook);
+  void withRetries('telegram', async () => {
+    await setupTelegramWebhook();
+    await setupAdminCommands();
+  });
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   startTrackingJob();
   void withRetries('viber', setupViberWebhook);
