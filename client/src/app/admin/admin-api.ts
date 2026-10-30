@@ -398,6 +398,7 @@ export interface Shipment {
   ordered_at: string;
   expected_at: string | null;
   preorder_enabled: boolean;
+  show_incoming: boolean;
   received_at: string | null;
   created_at: string;
   totals: ShipmentTotals;

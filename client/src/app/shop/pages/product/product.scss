@@ -40,6 +40,11 @@
 .size.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .size.pre::after { content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
 .size.on.pre::after { background: #e9c98a; }
+.size.soon { color: var(--ink-2); border-style: dashed; }
+.size.soon::after { content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--info); }
+.size.on.soon { border-style: solid; color: var(--bg); }
+.preorder-note.soon-note { background: color-mix(in srgb, var(--info) 8%, var(--surface)); border-color: color-mix(in srgb, var(--info) 25%, transparent); }
+.preorder-note.soon-note app-icon { color: var(--info); }
 .preorder-note { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 4px 0 18px; background: color-mix(in srgb, var(--warning) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent); border-radius: var(--radius-lg); color: var(--ink-2); }
 .preorder-note app-icon { color: var(--warning); flex: none; margin-top: 1px; }
 .preorder-note b { display: block; color: var(--ink); font-weight: 600; font-size: 14px; margin-bottom: 2px; }

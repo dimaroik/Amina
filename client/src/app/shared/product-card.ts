@@ -16,7 +16,7 @@ import { UahPipe } from './uah.pipe';
   imports: [RouterLink, Icon, UahPipe],
   template: `
     @let p = product();
-    <article class="pcard" [class.sold-out]="!p.in_stock && !p.preorder">
+    <article class="pcard" [class.sold-out]="!p.in_stock && !p.preorder && !p.incoming">
       <div class="frame">
       <a class="media" [routerLink]="['/product', p.slug]" [attr.aria-label]="p.name">
         @if (p.images[0]) {
@@ -32,6 +32,7 @@ import { UahPipe } from './uah.pipe';
           @if (p.is_new) { <span class="tag">New</span> }
           @if (!p.in_stock) {
             @if (p.preorder) { <span class="tag tag-pre" [title]="'Передзамовлення, ' + when(p.preorder_eta)">Передзамовлення</span> }
+            @else if (p.incoming) { <span class="tag tag-soon" [title]="'В дорозі, ' + when(p.incoming_eta)">В дорозі</span> }
             @else { <span class="tag tag-dark">Немає</span> }
           }
         </div>
@@ -75,6 +76,7 @@ import { UahPipe } from './uah.pipe';
     .pcard:hover .alt { opacity: 1; }
     .pcard:hover .img { transform: scale(1.035); }
     .tag-pre { background: var(--warning); color: #fff; white-space: nowrap; }
+    .tag-soon { background: var(--info); color: #fff; white-space: nowrap; }
     .sold-out .img { filter: grayscale(.35); opacity: .8; }
     .tags { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
     .wish { position: absolute; top: 6px; right: 6px; width: 38px; height: 38px; border: 0; background: transparent; display: grid; place-items: center; color: var(--ink); border-radius: 50%; transition: transform .2s var(--ease), background .2s; }

@@ -50,7 +50,11 @@ export const PRODUCT_CARD_SQL = `
   (SELECT MIN(vp.eta) FROM variant_preorder vp JOIN product_variants v ON v.id = vp.variant_id
     WHERE v.product_id = p.id AND vp.available > 0) AS preorder_eta,
   EXISTS (SELECT 1 FROM variant_preorder vp JOIN product_variants v ON v.id = vp.variant_id
-    WHERE v.product_id = p.id AND vp.available > 0) AS preorder`;
+    WHERE v.product_id = p.id AND vp.available > 0) AS preorder,
+  (SELECT MIN(vi.eta) FROM variant_incoming vi JOIN product_variants v ON v.id = vi.variant_id
+    WHERE v.product_id = p.id AND v.stock <= 0) AS incoming_eta,
+  EXISTS (SELECT 1 FROM variant_incoming vi JOIN product_variants v ON v.id = vi.variant_id
+    WHERE v.product_id = p.id AND v.stock <= 0) AS incoming`;
 
 async function categoryWithDescendants(slug: string): Promise<number[]> {
   const rows = await query<{ id: number }>(
@@ -208,8 +212,10 @@ catalogRouter.get('/products/:slug', async (req, res) => {
     query('SELECT id, url, alt, color FROM product_images WHERE product_id = $1 ORDER BY sort_order, id', [product.id]),
     query(
       `SELECT v.id, v.size, v.color, v.color_hex, v.sku, v.stock, v.price,
-         CASE WHEN v.stock > 0 THEN 0 ELSE COALESCE(vp.available, 0) END AS preorder, vp.eta AS preorder_eta
+         CASE WHEN v.stock > 0 THEN 0 ELSE COALESCE(vp.available, 0) END AS preorder, vp.eta AS preorder_eta,
+         v.stock <= 0 AND vi.variant_id IS NOT NULL AS incoming, vi.eta AS incoming_eta
        FROM product_variants v LEFT JOIN variant_preorder vp ON vp.variant_id = v.id
+       LEFT JOIN variant_incoming vi ON vi.variant_id = v.id
        WHERE v.product_id = $1 ORDER BY v.sort_order, v.id`,
       [product.id],
     ),

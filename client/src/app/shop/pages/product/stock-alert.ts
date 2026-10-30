@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../../core/api.service';
 import type { ProductDetail } from '../../../core/models';
+import { preorderWhen } from '../../../core/labels';
 import { Icon } from '../../../shared/icon';
 
 interface AlertResponse {
@@ -24,6 +25,7 @@ interface AlertResponse {
           <app-icon name="bell" [size]="28" [stroke]="1.3" />
           <h3 class="h3">Повідомити про наявність</h3>
           <p class="muted small">{{ subtitle() }}. Напишемо одразу, щойно розмір з'явиться.</p>
+          @if (eta(); as e) { <p class="soon small"><app-icon name="truck" [size]="15" /> Уже в дорозі, {{ e }}</p> }
 
           @if (options().length > 1) {
             <div class="sizes">
@@ -57,6 +59,7 @@ interface AlertResponse {
     @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
     .x { position: absolute; top: 8px; right: 8px; }
     .h3, p { margin: 0; }
+    .soon { display: inline-flex; align-items: center; gap: 6px; margin: -4px 0 0; color: var(--info); }
     .sizes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
     .field { width: 100%; text-align: left; }
     .or { width: 100%; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
@@ -89,6 +92,13 @@ export class StockAlertDialog {
     const picked = this.picked();
     if (picked && this.options().some((v) => v.id === picked)) return picked;
     return (this.options().find((v) => v.size === this.size()) ?? this.options()[0])?.id ?? null;
+  });
+
+  /** the chosen size is on the way in a shipment */
+  protected eta = computed(() => {
+    const v = this.product().variants.find((x) => x.id === this.variantId());
+    if (!v || (!v.incoming && !(v.preorder ?? 0))) return null;
+    return preorderWhen(v.incoming_eta ?? v.preorder_eta);
   });
 
   submit(telegram: boolean) {

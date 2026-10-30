@@ -22,19 +22,20 @@ const headerSchema = z.object({
   ordered_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   expected_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
   preorder_enabled: z.boolean().default(false),
+  show_incoming: z.boolean().default(false),
 });
 
 /**
- * Products created for a shipment are shown while it takes pre-orders (they can only be
- * pre-ordered then) and hidden again when pre-orders are switched off and nothing is in stock.
+ * Products created for a shipment are shown while it is announced on the site ("on the way"
+ * or open for pre-order) and hidden again when it is not, unless something is in stock.
  */
 async function syncPreorderVisibility(id: number) {
   await query(
-    `UPDATE products p SET is_active = s.preorder_enabled, updated_at = now()
+    `UPDATE products p SET is_active = (s.preorder_enabled OR s.show_incoming), updated_at = now()
      FROM shipments s
-     WHERE s.id = $1 AND s.status = 'in_transit' AND p.is_active <> s.preorder_enabled
+     WHERE s.id = $1 AND s.status = 'in_transit' AND p.is_active <> (s.preorder_enabled OR s.show_incoming)
        AND p.id IN (SELECT product_id FROM shipment_items WHERE shipment_id = $1 AND activate_on_receive AND product_id IS NOT NULL)
-       AND (s.preorder_enabled OR NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.stock > 0))`,
+       AND (s.preorder_enabled OR s.show_incoming OR NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.stock > 0))`,
     [id],
   );
 }
@@ -81,9 +82,9 @@ adminShipmentsRouter.get('/shipments/:id', async (req, res) => {
 adminShipmentsRouter.post('/shipments', async (req, res) => {
   const b = headerSchema.parse(req.body);
   const row = await one<{ id: number }>(
-    `INSERT INTO shipments(title, supplier, currency, exchange_rate, extra_cost, allocation, tracking, note, ordered_at, expected_at, preorder_enabled)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, current_date),$10,$11) RETURNING id`,
-    [b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled],
+    `INSERT INTO shipments(title, supplier, currency, exchange_rate, extra_cost, allocation, tracking, note, ordered_at, expected_at, preorder_enabled, show_incoming)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, current_date),$10,$11,$12) RETURNING id`,
+    [b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled, b.show_incoming],
   );
   res.status(201).json(await loadShipment(row!.id));
 });
@@ -99,8 +100,8 @@ adminShipmentsRouter.put('/shipments/:id', async (req, res) => {
   } else {
     await query(
       `UPDATE shipments SET title=$2, supplier=$3, currency=$4, exchange_rate=$5, extra_cost=$6, allocation=$7, tracking=$8, note=$9,
-         ordered_at=COALESCE($10::date, ordered_at), expected_at=$11, preorder_enabled=$12 WHERE id=$1`,
-      [id, b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled],
+         ordered_at=COALESCE($10::date, ordered_at), expected_at=$11, preorder_enabled=$12, show_incoming=$13 WHERE id=$1`,
+      [id, b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled, b.show_incoming],
     );
     await syncPreorderVisibility(id);
   }
@@ -176,8 +177,8 @@ adminShipmentsRouter.post('/shipments/:id/products', async (req, res) => {
   const shipment = await editable(id);
   const productId = await saveProduct(null, {
     ...b.product,
-    // visible straight away when the shipment takes pre-orders
-    is_active: shipment.preorder_enabled,
+    // visible straight away when the shipment is announced on the site
+    is_active: shipment.preorder_enabled || shipment.show_incoming,
     variants: b.lines.map((l) => ({ size: l.size, color: l.color, color_hex: l.color_hex, sku: '', stock: 0, price: null })),
   });
   const variants = await query<{ id: number; size: string; color: string }>(
