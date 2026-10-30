@@ -13,6 +13,8 @@ import { Icon } from '../../../shared/icon';
 import { ProductCardView } from '../../../shared/product-card';
 import { UahPipe } from '../../../shared/uah.pipe';
 import { StockAlertDialog } from './stock-alert';
+import { ProductReviews } from './product-reviews';
+import { Stars } from '../../../shared/stars';
 
 const SIZE_GUIDE = [
   ['XS', '40–42', '80–84', '62–66', '88–92'],
@@ -25,7 +27,7 @@ const SIZE_GUIDE = [
 @Component({
   selector: 'app-product',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, ProductCardView, UahPipe, StockAlertDialog],
+  imports: [RouterLink, Icon, ProductCardView, UahPipe, StockAlertDialog, ProductReviews, Stars],
   template: `
     @if (error()) {
       <div class="container empty-state">
@@ -78,6 +80,9 @@ const SIZE_GUIDE = [
           <div class="info-inner">
             @if (prod.category_name) { <span class="eyebrow">{{ prod.category_name }}</span> }
             <h1 class="h1 name">{{ prod.name }}</h1>
+            @if (prod.rating_count) {
+              <a class="rating" href="#reviews" (click)="toReviews($event)"><app-stars [value]="prod.rating_avg ?? 0" /> <span class="small">{{ prod.rating_avg }} · {{ prod.rating_count }} відг.</span></a>
+            }
             <div class="price-line">
               <span class="price big" [class.price-sale]="discount() > 0">{{ price() | uah }}</span>
               @if (discount() > 0) { <span class="price-old">{{ prod.old_price | uah }}</span> }
@@ -150,6 +155,8 @@ const SIZE_GUIDE = [
           </div>
         </div>
       </div>
+
+      <div class="container"><app-product-reviews [product]="prod" /></div>
 
       @if (prod.related.length) {
         <section class="container related">
@@ -265,6 +272,11 @@ export class ProductPage {
     return p?.old_price && p.old_price > this.price() ? Math.round((1 - this.price() / p.old_price) * 100) : 0;
   });
   /** Some size of the selected colour is sold out — offer a back-in-stock alert. */
+  toReviews(e: Event) {
+    e.preventDefault();
+    document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
   protected hasMissingSizes = computed(() => this.sizes().some((s) => !s.stock));
   protected inStock = computed(() => (this.p()?.variants ?? []).some((v) => v.stock > 0));
   protected maxQty = computed(() => Math.max(1, this.variant()?.stock ?? 1));

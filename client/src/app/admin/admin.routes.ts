@@ -28,6 +28,7 @@ export const ADMIN_ROUTES: Routes = [
       { path: 'customers', title: 'Клієнти — Amina Admin', loadComponent: () => import('./pages/customers/customers').then((m) => m.CustomersPage) },
       { path: 'chats', title: 'Звернення — Amina Admin', loadComponent: () => import('./pages/chats/chats').then((m) => m.ChatsPage) },
       { path: 'chats/:id', title: 'Звернення — Amina Admin', loadComponent: () => import('./pages/chats/chats').then((m) => m.ChatsPage) },
+      { path: 'reviews', title: 'Відгуки — Amina Admin', loadComponent: () => import('./pages/reviews/reviews').then((m) => m.ReviewsPage) },
       { path: 'promo', title: 'Промокоди — Amina Admin', loadComponent: () => import('./pages/promo/promo').then((m) => m.PromoPage) },
       { path: 'content', title: 'Контент — Amina Admin', loadComponent: () => import('./pages/content/content').then((m) => m.ContentPage) },
       { path: 'delivery-payment', title: 'Доставка й оплата — Amina Admin', loadComponent: () => import('./pages/delivery-payment/delivery-payment').then((m) => m.DeliveryPaymentPage) },

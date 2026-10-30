@@ -192,7 +192,9 @@ catalogRouter.get('/products', async (req, res) => {
 
 catalogRouter.get('/products/:slug', async (req, res) => {
   const product = await one(
-    `SELECT p.*, c.slug AS category_slug, c.name AS category_name
+    `SELECT p.*, c.slug AS category_slug, c.name AS category_name,
+       (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id AND r.status = 'approved') AS rating_count,
+       (SELECT ROUND(AVG(rating)::numeric, 1) FROM reviews r WHERE r.product_id = p.id AND r.status = 'approved') AS rating_avg
      FROM products p LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.slug = $1 AND p.is_active`,
     [req.params.slug],

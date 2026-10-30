@@ -218,6 +218,7 @@ export class AdminApi {
   /** Sidebar badges, refreshed by the layout and after order/chat changes. */
   readonly newOrders = signal(0);
   readonly waitingChats = signal(0);
+  readonly pendingReviews = signal(0);
 
   get<T>(path: string, params?: Record<string, string | number | boolean | null | undefined>): Observable<T> {
     return this.api.get<T>(`/admin${path}`, params);
@@ -241,6 +242,10 @@ export class AdminApi {
   refreshBadges() {
     this.get<{ statusCounts: Record<string, number> }>('/orders', { limit: 1 }).subscribe({
       next: (r) => this.newOrders.set(r.statusCounts['new'] ?? 0),
+      error: () => {},
+    });
+    this.get<{ counts: Record<string, number> }>('/reviews', { status: 'pending' }).subscribe({
+      next: (r) => this.pendingReviews.set(r.counts['pending'] ?? 0),
       error: () => {},
     });
     this.get<ChatRow[]>('/chats').subscribe({
@@ -274,4 +279,23 @@ export function phoneDigits(phone: string): string {
   let d = (phone || '').replace(/\D/g, '');
   if (d.startsWith('0') && d.length === 10) d = `38${d}`;
   return d;
+}
+
+export interface AdminReview {
+  id: number;
+  product_id: number;
+  product_name: string;
+  product_slug: string;
+  product_image: string | null;
+  name: string;
+  rating: number;
+  text: string;
+  size: string;
+  height: number | null;
+  fit: 'small' | 'true' | 'large' | null;
+  photos: string[];
+  verified: boolean;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_reply: string;
+  created_at: string;
 }
