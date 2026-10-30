@@ -101,6 +101,7 @@ interface Filters {
                     </td>
                     <td class="num" data-label="Залишок">
                       <span class="adm-pill" [class.danger]="p.stock === 0" [class.warn]="p.stock > 0 && p.stock <= 3">{{ p.stock }} шт</span>
+                      @if (p.waiting) { <div class="adm-muted tiny" title="Чекають на сповіщення про наявність">🔔 {{ p.waiting }} чекають</div> }
                     </td>
                     <td data-label="Статус">
                       <span class="adm-pill" [class.ok]="p.is_active">{{ p.is_active ? 'На сайті' : 'Приховано' }}</span>

@@ -89,10 +89,13 @@ export interface AdminProductRow {
   image: string | null;
   stock: number;
   variants_count: number;
+  waiting: number;
 }
 
 export interface AdminVariant {
   id?: number;
+  /** People waiting for a back-in-stock alert (read-only). */
+  waiting?: number;
   size: string;
   color: string;
   color_hex: string | null;

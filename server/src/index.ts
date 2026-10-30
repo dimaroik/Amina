@@ -20,6 +20,8 @@ import { chatRouter } from './routes/chat.js';
 import { checkoutRouter } from './routes/checkout.js';
 import { messengersRouter } from './routes/messengers.js';
 import { publicRouter } from './routes/public.js';
+import { stockAlertsRouter } from './routes/stock-alerts.js';
+import { processStockAlerts } from './services/stock-alerts.js';
 import { setupTelegramWebhook } from './services/notify/telegram.js';
 import { setupViberWebhook } from './services/notify/viber.js';
 import { errorHandler, HttpError } from './utils/errors.js';
@@ -51,6 +53,7 @@ export function createApp() {
   api.use(checkoutRouter);
   api.use(authRouter);
   api.use(chatRouter);
+  api.use(stockAlertsRouter);
   api.use('/admin', requireAdmin, adminOrdersRouter, adminCatalogRouter, adminMiscRouter);
   api.use((_req, _res, next) => next(new HttpError(404, 'Маршрут не знайдено')));
   api.use(errorHandler);
@@ -78,6 +81,7 @@ async function main() {
     console.log(`Amina API listening on :${config.port} (${config.publicUrl})`);
   });
   void withRetries('telegram', setupTelegramWebhook);
+  processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
   void withRetries('viber', setupViberWebhook);
 }
 

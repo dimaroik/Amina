@@ -4,6 +4,7 @@ import { one, query, tx } from '../../db/pool.js';
 import { ORDER_STATUSES, PAYMENT_STATUSES, orderStatusLabel, paymentStatusLabel } from '../../services/labels.js';
 import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js';
 import { addHistory, getOrderFull } from '../../services/orders.js';
+import { processStockAlerts } from '../../services/stock-alerts.js';
 import { badRequest, notFound } from '../../utils/errors.js';
 
 export const adminOrdersRouter = Router();
@@ -170,6 +171,7 @@ adminOrdersRouter.patch('/orders/:id', async (req, res) => {
   if (otherChanged) await addHistory(id, 'edit', 'Дані замовлення оновлено', author);
 
   if (body.notify && (statusChanged || paymentChanged)) fireAndForget(notifyOrderStatus(id, { statusChanged, paymentChanged }));
+  if (statusChanged) fireAndForget(processStockAlerts());
   res.json(await getOrderFull(id));
 });
 
@@ -234,6 +236,7 @@ adminOrdersRouter.put('/orders/:id/items', async (req, res) => {
     );
     await client.query("INSERT INTO order_history(order_id, action, note, author) VALUES ($1, 'items', 'Склад замовлення змінено', $2)", [id, author]);
   });
+  fireAndForget(processStockAlerts());
   res.json(await getOrderFull(id));
 });
 
@@ -253,5 +256,6 @@ adminOrdersRouter.delete('/orders/:id', async (req, res) => {
     if (!['cancelled', 'returned'].includes(order.status)) await syncStock(client, id, order.status, 'cancelled');
     await client.query('DELETE FROM orders WHERE id = $1', [id]);
   });
+  fireAndForget(processStockAlerts());
   res.json({ ok: true });
 });
