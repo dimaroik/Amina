@@ -55,6 +55,18 @@ export const config = {
     token: env.MONOBANK_TOKEN ?? '',
   },
   novaPoshtaApiKey: env.NOVA_POSHTA_API_KEY ?? '',
+  meta: {
+    // Facebook Page publishing (Facebook Login)
+    appId: env.META_APP_ID ?? '',
+    appSecret: env.META_APP_SECRET ?? '',
+    // Instagram publishing (Instagram API with Instagram Login — no Facebook Page needed)
+    igAppId: env.INSTAGRAM_APP_ID ?? '',
+    igAppSecret: env.INSTAGRAM_APP_SECRET ?? '',
+    // overridable only to test against local stubs
+    graphUrl: env.META_GRAPH_URL ?? 'https://graph.facebook.com',
+    igGraphUrl: env.INSTAGRAM_GRAPH_URL ?? 'https://graph.instagram.com',
+    igApiUrl: env.INSTAGRAM_API_URL ?? 'https://api.instagram.com',
+  },
   anthropic: {
     enabled: Boolean(env.ANTHROPIC_API_KEY),
     model: env.CHATBOT_MODEL ?? 'claude-opus-5-5',

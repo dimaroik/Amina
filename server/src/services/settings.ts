@@ -79,6 +79,13 @@ export interface ChannelSettings {
   digestTime: string;
 }
 
+export interface SocialSettings {
+  /** automatic posts (same events and time as the Telegram channel) also go to these networks */
+  instagram: boolean;
+  facebook: boolean;
+  hashtags: string;
+}
+
 export interface Settings {
   store: StoreSettings;
   payment: PaymentSettings;
@@ -87,6 +94,7 @@ export interface Settings {
   analytics: AnalyticsSettings;
   novaPoshta: NovaPoshtaSettings;
   channel: ChannelSettings;
+  social: SocialSettings;
 }
 
 export const defaultSettings: Settings = {
@@ -151,6 +159,11 @@ export const defaultSettings: Settings = {
     digestEnabled: true,
     digestDay: 5,
     digestTime: '18:00',
+  },
+  social: {
+    instagram: true,
+    facebook: true,
+    hashtags: '#amina #жіночийодяг #одяг #стиль',
   },
   chatbot: {
     enabled: true,

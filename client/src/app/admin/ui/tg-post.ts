@@ -7,6 +7,9 @@ import { Toasts } from '../../core/toast.service';
 import { Icon } from '../../shared/icon';
 import { AdminApi } from '../admin-api';
 
+type Target = 'telegram' | 'instagram' | 'facebook';
+const NAMES: Record<Target, string> = { telegram: 'Telegram', instagram: 'Instagram', facebook: 'Facebook' };
+
 type Kind = 'new' | 'restock' | 'preorder' | 'incoming' | 'sale' | 'plain';
 const KINDS: { v: Kind; l: string }[] = [
   { v: 'new', l: '✨ Новинка' },
@@ -17,7 +20,7 @@ const KINDS: { v: Kind; l: string }[] = [
   { v: 'plain', l: 'Без позначки' },
 ];
 
-/** «Опублікувати в Telegram-каналі» for one product. */
+/** «Опублікувати» one product to the Telegram channel, Instagram and/or Facebook — now or later. */
 @Component({
   selector: 'adm-tg-post',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,13 +28,17 @@ const KINDS: { v: Kind; l: string }[] = [
   host: { '(document:keydown.escape)': 'open.set(false)' },
   template: `
     <div class="wrap">
-      <button class="btn btn-ghost btn-sm" (click)="toggle()"><app-icon name="telegram" [size]="15" /> Telegram</button>
+      <button class="btn btn-ghost btn-sm" (click)="toggle()"><app-icon name="send" [size]="15" /> Опублікувати</button>
       @if (open()) {
         <div class="pop adm-card" role="dialog" aria-label="Публікація в Telegram">
-          @if (ready() === false) {
-            <p class="small" style="margin:0">Канал ще не підключено.</p>
-            <a class="btn btn-ghost btn-xs" routerLink="/admin/settings" (click)="open.set(false)">Налаштування → Telegram</a>
+          @if (ready() === false && !networks().length) {
+            <p class="small" style="margin:0">Ще не підключено ні Telegram-канал, ні Instagram чи Facebook.</p>
+            <a class="btn btn-ghost btn-xs" routerLink="/admin/settings" (click)="open.set(false)">Налаштування</a>
           } @else {
+            <div class="targets">
+              @if (ready()) { <label><input type="checkbox" [checked]="has('telegram')" (change)="flip('telegram')" /> Telegram</label> }
+              @for (n of networks(); track n) { <label><input type="checkbox" [checked]="has(n)" (change)="flip(n)" /> {{ n === 'instagram' ? 'Instagram' : 'Facebook' }}</label> }
+            </div>
             <div class="field"><label class="label">Позначка в пості</label>
               <select class="select" [(ngModel)]="kind">@for (k of kinds; track k.v) { <option [value]="k.v">{{ k.l }}</option> }</select></div>
             <div class="adm-seg when">
@@ -41,10 +48,10 @@ const KINDS: { v: Kind; l: string }[] = [
             @if (later()) { <input class="input" type="datetime-local" [(ngModel)]="at" [min]="minAt" /> }
             @if (last(); as l) { <p class="adm-hint" style="margin:0">Востаннє опубліковано {{ l.created_at | date: 'd MMM, HH:mm' }}</p> }
             @for (q of scheduled(); track q.id) {
-              <div class="sched small"><app-icon name="clock" [size]="14" /> {{ q.run_at | date: 'EEE d MMM, HH:mm' }}<span class="grow"></span><button class="link small" (click)="cancel(q.id)">Скасувати</button></div>
+              <div class="sched small"><app-icon name="clock" [size]="14" /> {{ q.run_at | date: 'EEE d MMM, HH:mm' }}@if (q.target) { · {{ netName(q.target) }} }<span class="grow"></span><button class="link small" (click)="cancel(q.id)">Скасувати</button></div>
             }
             <p class="adm-hint" style="margin:0">Фото (або альбом), назва, ціна, опис, розміри й посилання на товар. Спершу збережіть зміни.</p>
-            <button class="btn btn-sm" (click)="post()" [disabled]="busy() || (later() && !at)">{{ busy() ? 'Хвилинку…' : later() ? 'Запланувати' : 'Опублікувати в каналі' }}</button>
+            <button class="btn btn-sm" (click)="post()" [disabled]="busy() || (later() && !at) || !targets().length">{{ busy() ? 'Хвилинку…' : later() ? 'Запланувати' : 'Опублікувати в каналі' }}</button>
           }
         </div>
       }
@@ -52,6 +59,8 @@ const KINDS: { v: Kind; l: string }[] = [
   `,
   styles: `
     .wrap { position: relative; }
+    .targets { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+    .targets label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
     .when { display: flex; } .when button { flex: 1; }
     .sched { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--surface-2); border-radius: var(--radius); }
     .grow { flex: 1; }
@@ -69,7 +78,9 @@ export class TgPost {
   protected busy = signal(false);
   protected ready = signal<boolean | null>(null);
   protected last = signal<{ created_at: string; kind: string } | null>(null);
-  protected scheduled = signal<{ id: number; run_at: string }[]>([]);
+  protected scheduled = signal<{ id: number; run_at: string; target?: string }[]>([]);
+  protected networks = signal<Target[]>([]);
+  protected targets = signal<Target[]>([]);
   protected later = signal(false);
   protected at = '';
   /** datetime-local wants local time without seconds */
@@ -83,10 +94,15 @@ export class TgPost {
 
   private load() {
     this.api
-      .get<{ ready: boolean; last: { created_at: string; kind: string } | null; suggested: Kind; scheduled: { id: number; run_at: string }[] }>(`/products/${this.productId()}/telegram`)
+      .get<{ ready: boolean; networks: Target[]; last: { created_at: string; kind: string } | null; suggested: Kind; scheduled: { id: number; run_at: string; target: string }[] }>(
+        `/products/${this.productId()}/telegram`,
+      )
       .subscribe({
         next: (r) => {
           this.ready.set(r.ready);
+          this.networks.set(r.networks ?? []);
+          // everything connected is ticked by default
+          if (!this.targets().length) this.targets.set([...(r.ready ? (['telegram'] as Target[]) : []), ...(r.networks ?? [])]);
           this.last.set(r.last);
           this.scheduled.set(r.scheduled ?? []);
           this.kind = r.suggested;
@@ -94,6 +110,18 @@ export class TgPost {
         },
         error: (e) => this.toasts.error(errorMessage(e)),
       });
+  }
+
+  netName(t: string) {
+    return NAMES[t as Target] ?? t;
+  }
+
+  has(t: Target) {
+    return this.targets().includes(t);
+  }
+
+  flip(t: Target) {
+    this.targets.update((l) => (l.includes(t) ? l.filter((x) => x !== t) : [...l, t]));
   }
 
   cancel(id: number) {
@@ -106,11 +134,18 @@ export class TgPost {
   post() {
     this.busy.set(true);
     const at = this.later() && this.at ? new Date(this.at).toISOString() : undefined;
-    this.api.post<{ messageId?: number; scheduled?: { run_at: string } }>(`/products/${this.productId()}/telegram`, { kind: this.kind, at }).subscribe({
+    this.api
+      .post<{ posted?: Target[]; errors?: string[]; scheduled?: { run_at: string } }>(`/products/${this.productId()}/telegram`, { kind: this.kind, at, targets: this.targets() })
+      .subscribe({
       next: (r) => {
         this.busy.set(false);
         this.open.set(false);
-        this.toasts.success(r.scheduled ? `Заплановано на ${new Date(r.scheduled.run_at).toLocaleString('uk-UA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : 'Опубліковано в Telegram-каналі');
+        if (r.scheduled) {
+          this.toasts.success(`Заплановано на ${new Date(r.scheduled.run_at).toLocaleString('uk-UA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`);
+          return;
+        }
+        this.toasts.success(`Опубліковано: ${(r.posted ?? []).map((t) => NAMES[t]).join(', ')}`);
+        for (const e of r.errors ?? []) this.toasts.error(e);
       },
       error: (e) => {
         this.busy.set(false);

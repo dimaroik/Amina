@@ -214,6 +214,7 @@ export interface AdminSettings {
       digestDay: number;
       digestTime: string;
     };
+    social: { instagram: boolean; facebook: boolean; hashtags: string };
     notifications: {
       adminEmails: string[];
       telegramAdminChatIds: string[];

@@ -266,6 +266,10 @@ adminMiscRouter.put('/settings', async (req, res) => {
         })
         .partial()
         .optional(),
+      social: z
+        .object({ instagram: z.boolean(), facebook: z.boolean(), hashtags: z.string().trim().max(500) })
+        .partial()
+        .optional(),
       novaPoshta: z
         .object({
           senderCityRef: z.string().trim().max(60),
