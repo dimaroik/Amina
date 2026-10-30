@@ -273,6 +273,12 @@ export async function processQueue(): Promise<void> {
        WHERE q.status = 'pending' AND q.run_at <= now() ORDER BY q.run_at, q.id LIMIT 15`,
     );
     for (const q of due) {
+      // take the row for 10 minutes first, so a second server instance (during a deploy) skips it
+      const lease = await one(
+        "UPDATE channel_queue SET run_at = now() + interval '10 minutes' WHERE id = $1 AND status = 'pending' AND run_at <= now() RETURNING id",
+        [q.id],
+      );
+      if (!lease) continue;
       try {
         const active = q.product_id ? await one('SELECT 1 FROM products WHERE id = $1 AND is_active', [q.product_id]) : null;
         if (!active) {
@@ -376,26 +382,32 @@ export async function postDigest(): Promise<{ count: number; posted: Target[]; e
   return { count: list.length, posted, errors };
 }
 
+let digesting = false;
+
 /** Posts the digest once on the chosen weekday after the chosen time (also if the server woke up late that day). */
 async function maybeDigest(): Promise<void> {
+  if (digesting) return;
   const s = (await getSettings()).channel;
   if (!s.digestEnabled || (!(await channelReady()) && !(await autoNetworks()).length)) return;
   const now = kyivParts(new Date());
   if (now.weekday !== s.digestDay || now.hhmm < s.digestTime) return;
-  const last = await one<{ value: { date: string } }>("SELECT value FROM app_state WHERE key = 'last_digest'");
-  if (last?.value.date === now.date) return;
+  // claim the day before posting: Instagram carousels take longer than the 1-minute tick,
+  // and the day must not be posted again by the next tick or by another instance
+  const claimed = await one(
+    `INSERT INTO app_state(key, value, updated_at) VALUES ('last_digest', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+       WHERE app_state.value->>'date' IS DISTINCT FROM EXCLUDED.value->>'date'
+     RETURNING key`,
+    [JSON.stringify({ date: now.date, count: 0 })],
+  );
+  if (!claimed) return;
+  digesting = true;
   try {
-    const r = await postDigest();
-    // nothing new this week — remember the day anyway so it is not retried every minute
-    if (!r) {
-      await query(
-        `INSERT INTO app_state(key, value, updated_at) VALUES ('last_digest', $1, now())
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-        [JSON.stringify({ date: now.date, count: 0 })],
-      );
-    }
+    await postDigest();
   } catch (err) {
     console.error('[channel digest]', err instanceof Error ? err.message : err);
+  } finally {
+    digesting = false;
   }
 }
 
