@@ -117,7 +117,7 @@ const blank = (): AdminProduct => ({
                 @if (d.variants.length) {
                   <div class="adm-table-wrap">
                     <table class="adm-table variants">
-                      <thead><tr><th>Колір</th><th>Розмір</th><th>Артикул</th><th class="num">Залишок</th><th class="num">Ціна ₴</th><th></th></tr></thead>
+                      <thead><tr><th>Колір</th><th>Розмір</th><th>Артикул</th><th class="num">Залишок</th><th class="num">Ціна ₴</th><th class="num" title="Собівартість 1 шт. — заповнюється з поставок, можна вказати вручну">Собіварт. ₴</th><th></th></tr></thead>
                       <tbody>
                         @for (v of d.variants; track $index; let i = $index) {
                           <tr [class.zero]="v.stock === 0">
@@ -136,6 +136,7 @@ const blank = (): AdminProduct => ({
                               @if (v.waiting) { <div class="waiting" title="Стільки людей чекають на сповіщення про наявність">🔔 чекають: {{ v.waiting }}</div> }
                             </td>
                             <td class="num" data-label="Ціна"><input class="input sm w90" type="number" min="0" [(ngModel)]="v.price" (ngModelChange)="touch()" [placeholder]="d.price" /></td>
+                            <td class="num" data-label="Собівартість"><input class="input sm w90" type="number" min="0" [(ngModel)]="v.cost_price" (ngModelChange)="touch()" placeholder="—" /></td>
                             <td><button class="icon-btn" (click)="removeVariant(i)" title="Видалити"><app-icon name="trash" [size]="15" /></button></td>
                           </tr>
                         }
@@ -363,7 +364,7 @@ export class ProductEditorPage implements HasUnsavedChanges {
       slug: p.slug.trim() || undefined,
       price: Number(p.price),
       old_price: p.old_price === null || (p.old_price as unknown) === '' ? null : Number(p.old_price),
-      variants: p.variants.map(({ waiting: _w, ...v }) => ({ ...v, stock: Number(v.stock) || 0, price: v.price === null || (v.price as unknown) === '' ? null : Number(v.price), color_hex: v.color_hex || null })),
+      variants: p.variants.map(({ waiting: _w, ...v }) => ({ ...v, cost_price: v.cost_price === null || v.cost_price === undefined || (v.cost_price as unknown) === '' ? null : Number(v.cost_price), stock: Number(v.stock) || 0, price: v.price === null || (v.price as unknown) === '' ? null : Number(v.price), color_hex: v.color_hex || null })),
     };
     this.busy.set(true);
     const req = this.isNew() ? this.api.post<{ id: number }>('/products', body) : this.api.put<{ id: number }>(`/products/${p.id}`, body);

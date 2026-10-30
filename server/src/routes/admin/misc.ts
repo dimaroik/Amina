@@ -115,7 +115,7 @@ crud(
 adminMiscRouter.get('/dashboard', async (req, res) => {
   const days = Math.min(365, Math.max(1, Number(req.query.days ?? 30)));
   const counted = "status NOT IN ('cancelled', 'returned')";
-  const [totals, prev, daily, byStatus, top, recent, lowStock, chats] = await Promise.all([
+  const [totals, prev, daily, byStatus, top, recent, lowStock, chats, profit] = await Promise.all([
     one(
       `SELECT COUNT(*) AS orders, COALESCE(SUM(total) FILTER (WHERE ${counted}), 0) AS revenue,
          COALESCE(AVG(total) FILTER (WHERE ${counted}), 0) AS avg_check,
@@ -149,8 +149,17 @@ adminMiscRouter.get('/dashboard', async (req, res) => {
        WHERE p.is_active AND v.stock <= 2 ORDER BY v.stock, p.name LIMIT 10`,
     ),
     one("SELECT COUNT(*) FILTER (WHERE needs_human) AS waiting, COUNT(*) FILTER (WHERE updated_at > now() - interval '1 day') AS today FROM chat_sessions"),
+    // gross profit only over items whose landed cost is known; coverage tells how much of revenue that is
+    one(
+      `SELECT COALESCE(SUM((oi.price - oi.cost_price) * oi.quantity) FILTER (WHERE oi.cost_price IS NOT NULL), 0) AS gross,
+         COALESCE(SUM(oi.price * oi.quantity) FILTER (WHERE oi.cost_price IS NOT NULL), 0) AS covered_revenue,
+         COALESCE(SUM(oi.price * oi.quantity), 0) AS items_revenue
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE o.created_at >= now() - ($1 || ' days')::interval AND o.${counted}`,
+      [days],
+    ),
   ]);
-  res.json({ days, totals, prev, daily, byStatus, top, recent, lowStock, chats });
+  res.json({ days, totals, prev, daily, byStatus, top, recent, lowStock, chats, profit });
 });
 
 // ---------- customers ----------

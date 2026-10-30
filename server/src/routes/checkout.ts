@@ -117,7 +117,7 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
     const qty = new Map<number, number>();
     body.items.forEach((i) => qty.set(i.variantId, (qty.get(i.variantId) ?? 0) + i.quantity));
     const { rows: variants } = await client.query(
-      `SELECT v.id, v.size, v.color, v.sku AS vsku, v.stock, COALESCE(v.price, p.price) AS price,
+      `SELECT v.id, v.size, v.color, v.sku AS vsku, v.stock, COALESCE(v.price, p.price) AS price, v.cost_price,
          p.id AS product_id, p.name, p.sku, p.is_active,
          (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order, id LIMIT 1) AS image
        FROM product_variants v JOIN products p ON p.id = v.product_id
@@ -162,9 +162,9 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
     for (const v of variants) {
       const q = qty.get(v.id)!;
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [order.id, v.product_id, v.id, v.name, v.vsku || v.sku, v.size, v.color, v.image, v.price, q],
+        `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity, cost_price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [order.id, v.product_id, v.id, v.name, v.vsku || v.sku, v.size, v.color, v.image, v.price, q, v.cost_price],
       );
       await client.query('UPDATE product_variants SET stock = stock - $2 WHERE id = $1', [v.id, q]);
       await client.query('UPDATE products SET sales_count = sales_count + $2 WHERE id = $1', [v.product_id, q]);

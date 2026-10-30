@@ -100,6 +100,8 @@ export interface AdminProductRow {
 
 export interface AdminVariant {
   id?: number;
+  /** Landed cost per unit, ₴ (filled in by received shipments, editable). */
+  cost_price?: number | null;
   /** People waiting for a back-in-stock alert (read-only). */
   waiting?: number;
   size: string;
@@ -150,6 +152,7 @@ export interface Dashboard {
   recent: { id: number; number: string; customer_name: string; total: number; status: OrderStatus; payment_status: PaymentStatus; created_at: string }[];
   lowStock: { id: number; name: string; size: string; color: string; stock: number }[];
   chats: { waiting: number; today: number };
+  profit?: { gross: number; covered_revenue: number; items_revenue: number };
 }
 
 export interface Customer {
@@ -330,4 +333,56 @@ export interface AdminReview {
   status: 'pending' | 'approved' | 'rejected';
   admin_reply: string;
   created_at: string;
+}
+
+export type Currency = 'USD' | 'CNY' | 'EUR' | 'UAH';
+
+export interface ShipmentTotals {
+  units: number;
+  goods: number;
+  extra: number;
+  total: number;
+  total_uah: number;
+  avg_unit_uah: number;
+  expected_revenue: number;
+  expected_profit: number;
+  margin: number | null;
+}
+
+export interface ShipmentItem {
+  id: number;
+  product_id: number | null;
+  variant_id: number | null;
+  name: string;
+  size: string;
+  color: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number;
+  total_cost: number;
+  sale_price: number | null;
+  margin: number | null;
+  image: string | null;
+  stock: number | null;
+  product_slug: string | null;
+  activate_on_receive: boolean;
+}
+
+export interface Shipment {
+  id: number;
+  title: string;
+  supplier: string;
+  status: 'in_transit' | 'received';
+  currency: Currency;
+  exchange_rate: number;
+  extra_cost: number;
+  allocation: 'value' | 'quantity';
+  tracking: string;
+  note: string;
+  ordered_at: string;
+  received_at: string | null;
+  created_at: string;
+  totals: ShipmentTotals;
+  items: ShipmentItem[];
+  previews?: string[];
 }

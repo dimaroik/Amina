@@ -226,9 +226,9 @@ adminOrdersRouter.put('/orders/:id/items', async (req, res) => {
         );
         if (!v) throw badRequest('Варіант товару не знайдено');
         await client.query(
-          `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [id, v.pid, v.id, v.name, v.sku || v.psku, v.size, v.color, v.image, item.price ?? v.final_price, item.quantity],
+          `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity, cost_price)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [id, v.pid, v.id, v.name, v.sku || v.psku, v.size, v.color, v.image, item.price ?? v.final_price, item.quantity, v.cost_price],
         );
         if (holdsStock) await client.query('UPDATE product_variants SET stock = GREATEST(0, stock - $2) WHERE id = $1', [v.id, item.quantity]);
       }
