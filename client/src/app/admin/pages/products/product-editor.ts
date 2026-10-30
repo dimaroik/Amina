@@ -6,10 +6,11 @@ import { errorMessage } from '../../../core/api.service';
 import type { Category } from '../../../core/models';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
-import { AdminApi, flattenCategories, type AdminProduct, type AdminVariant } from '../../admin-api';
+import { type ProductDraft, AdminApi, flattenCategories, type AdminProduct, type AdminVariant } from '../../admin-api';
 import type { HasUnsavedChanges } from '../../admin.routes';
 import { Confirm } from '../../ui/confirm';
 import { ImageUpload } from '../../ui/image-upload';
+import { AiFill } from '../../ui/ai-fill';
 
 const SIZE_PRESETS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'One size'];
 const COLOR_PRESETS: [string, string][] = [
@@ -26,7 +27,7 @@ const blank = (): AdminProduct => ({
 @Component({
   selector: 'app-admin-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, CdkDropList, CdkDrag, Icon, ImageUpload],
+  imports: [FormsModule, RouterLink, CdkDropList, CdkDrag, Icon, ImageUpload, AiFill],
   template: `
     <div class="adm-page">
       <a routerLink="/admin/products" class="adm-back"><app-icon name="arrow-left" [size]="14" /> Усі товари</a>
@@ -44,6 +45,7 @@ const blank = (): AdminProduct => ({
         @let d = p();
         <div class="adm-split">
           <div class="adm-stack">
+            <adm-ai-fill [images]="imageUrls()" [colors]="colorNames()" [sizes]="sizePresets" (draft)="applyDraft($event)" />
             <div class="adm-card pad">
               <div class="form-grid">
                 <div class="field full"><label class="label">Назва *</label><input class="input" [(ngModel)]="d.name" (ngModelChange)="touch()" placeholder="Сукня міді з льону" /></div>
@@ -242,6 +244,8 @@ export class ProductEditorPage implements HasUnsavedChanges {
     const p = this.p();
     return p.old_price && p.old_price > p.price ? Math.round((1 - p.price / p.old_price) * 100) : 0;
   });
+  protected imageUrls = computed(() => { this.version(); return this.p().images.map((i) => i.url); });
+  protected colorNames = computed(() => this.colorPresets.map((c) => c[0]));
   protected dirty = computed(() => { this.version(); return this.loaded() && JSON.stringify(this.p()) !== this.savedJson; });
 
   constructor() {
@@ -283,6 +287,23 @@ export class ProductEditorPage implements HasUnsavedChanges {
 
   touch() {
     this.version.update((v) => v + 1);
+  }
+
+  /** Fills the card from the AI draft; empty suggestions keep what is already there. */
+  applyDraft(d: ProductDraft) {
+    const p = this.p();
+    if (d.name) p.name = d.name;
+    if (d.description) p.description = d.description;
+    if (d.composition) p.composition = d.composition;
+    if (d.care) p.care = d.care;
+    if (d.category_id !== null) p.category_id = d.category_id;
+    if (d.tags.length) p.tags = [...new Set([...p.tags, ...d.tags])];
+    // sizes/colours only pre-select the generator; existing variants are never touched
+    if (!p.variants.length) {
+      if (d.sizes.length) this.genSizes.set(new Set(d.sizes));
+      if (d.colors.length) this.genColors.set(new Set(d.colors));
+    }
+    this.touch();
   }
 
   max0(n: number) {

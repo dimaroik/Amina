@@ -7,6 +7,7 @@ import { ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_STATUSES, PAYMENT_STATUS_L
 import type { OrderStatus, Paged } from '../../../core/models';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
+import { EtaPipe } from '../../../shared/eta.pipe';
 import { UahPipe } from '../../../shared/uah.pipe';
 import { AdminApi, type AdminOrderRow } from '../../admin-api';
 import { Pager } from '../../ui/pager';
@@ -17,13 +18,14 @@ interface Filters {
   q: string;
   from: string;
   to: string;
+  preorder: string;
   page: number;
 }
 
 @Component({
   selector: 'app-admin-orders',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon, UahPipe, DatePipe, Pager],
+  imports: [FormsModule, Icon, UahPipe, EtaPipe, DatePipe, Pager],
   template: `
     <div class="adm-page">
       <div class="adm-page-head">
@@ -62,6 +64,9 @@ interface Filters {
         </select>
         <input class="input" type="date" [ngModel]="f().from" (ngModelChange)="set({ from: $event })" title="Від" />
         <input class="input" type="date" [ngModel]="f().to" (ngModelChange)="set({ to: $event })" title="До" />
+        <button class="btn btn-sm" [class.btn-ghost]="!f().preorder" (click)="set({ preorder: f().preorder ? '' : '1' })" title="Замовлення, що чекають на поставку">
+          <app-icon name="parcel" [size]="15" /> Передзамовлення
+        </button>
         <label class="adm-switch" title="Надсилати клієнту сповіщення при швидкій зміні статусу">
           <input type="checkbox" [(ngModel)]="notify" /><span class="track"></span> Сповіщати
         </label>
@@ -87,6 +92,7 @@ interface Filters {
                         <div>
                           <div class="t">{{ o.number }}</div>
                           <div class="s">{{ o.created_at | date: 'd MMM, HH:mm' }} · {{ o.items_count }} шт</div>
+                          @if (o.preorder) { <span class="adm-pill warn pre">Передзамовлення · {{ o.preorder_eta | eta: true }}</span> }
                         </div>
                       </div>
                     </td>
@@ -124,6 +130,7 @@ interface Filters {
     </div>
   `,
   styles: `
+    .pre { display: inline-block; margin-top: 4px; }
     .clamp { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .status-select { appearance: none; border: 0; border-radius: 999px; padding: 4px 24px 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23666' stroke-width='1.3'/%3E%3C/svg%3E");
@@ -140,7 +147,7 @@ export class OrdersListPage {
   protected paymentStatuses = PAYMENT_STATUSES;
   protected statusLabels = ORDER_STATUS_LABELS;
   protected paymentLabels = PAYMENT_STATUS_LABELS;
-  protected f = signal<Filters>({ status: '', payment_status: '', q: '', from: '', to: '', page: 1 });
+  protected f = signal<Filters>({ status: '', payment_status: '', q: '', from: '', to: '', preorder: '', page: 1 });
   protected data = signal<(Paged<AdminOrderRow> & { statusCounts: Record<string, number> }) | null>(null);
   protected counts = signal<Record<string, number>>({});
   protected allCount = signal(0);
@@ -157,6 +164,7 @@ export class OrdersListPage {
         q: p.get('q') ?? '',
         from: p.get('from') ?? '',
         to: p.get('to') ?? '',
+        preorder: p.get('preorder') ?? '',
         page: Number(p.get('page') ?? 1),
       });
       this.load();

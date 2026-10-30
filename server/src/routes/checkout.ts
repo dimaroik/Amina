@@ -125,15 +125,40 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
       [[...qty.keys()]],
     );
     if (variants.length !== qty.size) throw badRequest('Деякі товари більше недоступні. Оновіть кошик.');
+    // Sold-out variants can be pre-ordered from open shipments; such lines are split per shipment
+    const preorders = new Map<number, { shipmentId: number; quantity: number }[]>();
     for (const v of variants) {
       const want = qty.get(v.id)!;
       if (!v.is_active) throw badRequest(`Товар «${v.name}» більше недоступний`);
-      if (v.stock < want) {
-        throw new HttpError(409, `«${v.name}»${v.size ? ` (${v.size})` : ''}: в наявності лише ${v.stock} шт.`, {
+      if (v.stock >= want) continue;
+      const label = `«${v.name}»${v.size ? ` (${v.size})` : ''}`;
+      if (v.stock > 0) {
+        throw new HttpError(409, `${label}: в наявності лише ${v.stock} шт.`, { variantId: v.id, stock: v.stock });
+      }
+      // lock the shipments first so two checkouts cannot take the same free units
+      const { rows: free } = await client.query(
+        `SELECT f.shipment_id, f.free FROM shipment_preorder_free f
+         WHERE f.variant_id = $1 AND f.free > 0 AND f.shipment_id IN (
+           SELECT id FROM shipments WHERE status = 'in_transit' AND preorder_enabled ORDER BY id FOR UPDATE)
+         ORDER BY f.expected_at NULLS LAST, f.shipment_id`,
+        [v.id],
+      );
+      const available = free.reduce((n, f) => n + f.free, 0);
+      if (available < want) {
+        throw new HttpError(409, available ? `${label}: для передзамовлення доступно лише ${available} шт.` : `${label}: немає в наявності`, {
           variantId: v.id,
-          stock: v.stock,
+          stock: available,
         });
       }
+      let left = want;
+      const parts: { shipmentId: number; quantity: number }[] = [];
+      for (const f of free) {
+        if (!left) break;
+        const take = Math.min(left, f.free);
+        parts.push({ shipmentId: f.shipment_id, quantity: take });
+        left -= take;
+      }
+      preorders.set(v.id, parts);
     }
     const subtotal = variants.reduce((s, v) => s + Number(v.price) * qty.get(v.id)!, 0);
     const { discount, promo } = await applyPromo(body.promoCode, subtotal);
@@ -161,16 +186,22 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
     );
     for (const v of variants) {
       const q = qty.get(v.id)!;
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity, cost_price)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [order.id, v.product_id, v.id, v.name, v.vsku || v.sku, v.size, v.color, v.image, v.price, q, v.cost_price],
-      );
-      await client.query('UPDATE product_variants SET stock = stock - $2 WHERE id = $1', [v.id, q]);
+      const parts = preorders.get(v.id) ?? [{ shipmentId: null, quantity: q }];
+      for (const part of parts) {
+        await client.query(
+          `INSERT INTO order_items (order_id, product_id, variant_id, name, sku, size, color, image_url, price, quantity, cost_price, preorder_shipment_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          [order.id, v.product_id, v.id, v.name, v.vsku || v.sku, v.size, v.color, v.image, v.price, part.quantity, v.cost_price, part.shipmentId],
+        );
+      }
+      if (!preorders.has(v.id)) await client.query('UPDATE product_variants SET stock = stock - $2 WHERE id = $1', [v.id, q]);
       await client.query('UPDATE products SET sales_count = sales_count + $2 WHERE id = $1', [v.product_id, q]);
     }
     if (promo) await client.query('UPDATE promo_codes SET used_count = used_count + 1 WHERE upper(code) = upper($1)', [promo.code]);
-    await client.query("INSERT INTO order_history(order_id, action, note) VALUES ($1, 'created', 'Замовлення створено на сайті')", [order.id]);
+    await client.query("INSERT INTO order_history(order_id, action, note) VALUES ($1, 'created', $2)", [
+      order.id,
+      preorders.size ? 'Замовлення створено на сайті · є передзамовлення' : 'Замовлення створено на сайті',
+    ]);
     return order.id as number;
   });
 

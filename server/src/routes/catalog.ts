@@ -46,7 +46,11 @@ export const PRODUCT_CARD_SQL = `
     FROM product_variants v WHERE v.product_id = p.id AND v.color <> ''), '[]') AS colors,
   COALESCE((SELECT array_agg(s.size ORDER BY s.ord) FROM (
     SELECT size, MIN(sort_order) AS ord FROM product_variants WHERE product_id = p.id AND size <> '' GROUP BY size) s), '{}') AS sizes,
-  COALESCE((SELECT SUM(stock) FROM product_variants WHERE product_id = p.id), 0) > 0 AS in_stock`;
+  COALESCE((SELECT SUM(stock) FROM product_variants WHERE product_id = p.id), 0) > 0 AS in_stock,
+  (SELECT MIN(vp.eta) FROM variant_preorder vp JOIN product_variants v ON v.id = vp.variant_id
+    WHERE v.product_id = p.id AND vp.available > 0) AS preorder_eta,
+  EXISTS (SELECT 1 FROM variant_preorder vp JOIN product_variants v ON v.id = vp.variant_id
+    WHERE v.product_id = p.id AND vp.available > 0) AS preorder`;
 
 async function categoryWithDescendants(slug: string): Promise<number[]> {
   const rows = await query<{ id: number }>(
@@ -203,7 +207,10 @@ catalogRouter.get('/products/:slug', async (req, res) => {
   const [images, variants, breadcrumbs, related] = await Promise.all([
     query('SELECT id, url, alt, color FROM product_images WHERE product_id = $1 ORDER BY sort_order, id', [product.id]),
     query(
-      'SELECT id, size, color, color_hex, sku, stock, price FROM product_variants WHERE product_id = $1 ORDER BY sort_order, id',
+      `SELECT v.id, v.size, v.color, v.color_hex, v.sku, v.stock, v.price,
+         CASE WHEN v.stock > 0 THEN 0 ELSE COALESCE(vp.available, 0) END AS preorder, vp.eta AS preorder_eta
+       FROM product_variants v LEFT JOIN variant_preorder vp ON vp.variant_id = v.id
+       WHERE v.product_id = $1 ORDER BY v.sort_order, v.id`,
       [product.id],
     ),
     product.category_id
@@ -234,9 +241,10 @@ catalogRouter.post('/cart/check', async (req, res) => {
   const ids = body.items.map((i) => i.variantId);
   const rows = await query(
     `SELECT v.id AS variant_id, v.size, v.color, v.stock, COALESCE(v.price, p.price) AS price, p.old_price,
-       p.id AS product_id, p.name, p.slug, p.is_active,
+       p.id AS product_id, p.name, p.slug, p.is_active, COALESCE(vp.available, 0) AS preorder, vp.eta AS preorder_eta,
        (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order, id LIMIT 1) AS image
-     FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ANY($1)`,
+     FROM product_variants v JOIN products p ON p.id = v.product_id LEFT JOIN variant_preorder vp ON vp.variant_id = v.id
+     WHERE v.id = ANY($1)`,
     [ids],
   );
   const byId = new Map(rows.map((r) => [r.variant_id, r]));
@@ -244,7 +252,9 @@ catalogRouter.post('/cart/check', async (req, res) => {
     items: body.items.map((i) => {
       const r = byId.get(i.variantId);
       if (!r || !r.is_active) return { variantId: i.variantId, available: false, stock: 0 };
-      return { variantId: i.variantId, available: r.stock > 0, stock: r.stock, price: r.price, oldPrice: r.old_price, name: r.name, slug: r.slug, size: r.size, color: r.color, image: r.image, productId: r.product_id };
+      // a sold-out variant can still be pre-ordered from a shipment on the way
+      const preorder = r.stock <= 0 && r.preorder > 0;
+      return { variantId: i.variantId, available: r.stock > 0 || preorder, stock: preorder ? r.preorder : r.stock, preorder, eta: preorder ? r.preorder_eta : null, price: r.price, oldPrice: r.old_price, name: r.name, slug: r.slug, size: r.size, color: r.color, image: r.image, productId: r.product_id };
     }),
   });
 });

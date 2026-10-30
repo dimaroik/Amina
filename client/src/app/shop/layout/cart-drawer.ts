@@ -3,12 +3,13 @@ import { Router, RouterLink } from '@angular/router';
 import { Cart } from '../../core/cart.service';
 import { Store } from '../../core/store.service';
 import { Icon } from '../../shared/icon';
+import { EtaPipe } from '../../shared/eta.pipe';
 import { UahPipe } from '../../shared/uah.pipe';
 
 @Component({
   selector: 'app-cart-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, UahPipe],
+  imports: [RouterLink, Icon, UahPipe, EtaPipe],
   template: `
     <div class="scrim" [class.show]="cart.drawerOpen()" (click)="cart.close()"></div>
     <aside class="drawer" [class.open]="cart.drawerOpen()" aria-label="Кошик" [attr.aria-hidden]="!cart.drawerOpen()">
@@ -41,6 +42,7 @@ import { UahPipe } from '../../shared/uah.pipe';
                   <button class="remove" (click)="cart.remove(item.variantId)" aria-label="Видалити"><app-icon name="close" [size]="16" /></button>
                 </div>
                 <div class="muted small">{{ item.color }}@if (item.color && item.size) { · }{{ item.size }}</div>
+                @if (item.preorder) { <div class="pre-line">Передзамовлення · {{ item.eta | eta }}</div> }
                 <div class="row bottom">
                   <div class="qty">
                     <button (click)="cart.setQuantity(item.variantId, item.quantity - 1)" aria-label="Менше"><app-icon name="minus" [size]="14" /></button>

@@ -311,3 +311,7 @@ p { margin: 0 0 1em; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.25s; }
 
 
+
+/* pre-order line under a cart / order item */
+.pre-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: #8c6d3e; }
+.pre-line::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex: none; }

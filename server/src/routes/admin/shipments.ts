@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { one, query, tx } from '../../db/pool.js';
-import { loadShipment, nbuRate, computeShipment, type ShipmentItemRow, type ShipmentRow } from '../../services/shipments.js';
+import { loadShipment, nbuRate, computeShipment, preorderOrders, type ShipmentItemRow, type ShipmentRow } from '../../services/shipments.js';
 import { processStockAlerts } from '../../services/stock-alerts.js';
-import { fireAndForget } from '../../services/notify/index.js';
+import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js';
+import { addHistory } from '../../services/orders.js';
 import { badRequest, HttpError, notFound } from '../../utils/errors.js';
 import { productSchema, saveProduct } from './catalog.js';
 
@@ -19,7 +20,24 @@ const headerSchema = z.object({
   tracking: z.string().trim().max(100).default(''),
   note: z.string().max(2000).default(''),
   ordered_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  expected_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  preorder_enabled: z.boolean().default(false),
 });
+
+/**
+ * Products created for a shipment are shown while it takes pre-orders (they can only be
+ * pre-ordered then) and hidden again when pre-orders are switched off and nothing is in stock.
+ */
+async function syncPreorderVisibility(id: number) {
+  await query(
+    `UPDATE products p SET is_active = s.preorder_enabled, updated_at = now()
+     FROM shipments s
+     WHERE s.id = $1 AND s.status = 'in_transit' AND p.is_active <> s.preorder_enabled
+       AND p.id IN (SELECT product_id FROM shipment_items WHERE shipment_id = $1 AND activate_on_receive AND product_id IS NOT NULL)
+       AND (s.preorder_enabled OR NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.stock > 0))`,
+    [id],
+  );
+}
 
 async function editable(id: number): Promise<ShipmentRow> {
   const s = await one<ShipmentRow>('SELECT * FROM shipments WHERE id = $1', [id]);
@@ -63,9 +81,9 @@ adminShipmentsRouter.get('/shipments/:id', async (req, res) => {
 adminShipmentsRouter.post('/shipments', async (req, res) => {
   const b = headerSchema.parse(req.body);
   const row = await one<{ id: number }>(
-    `INSERT INTO shipments(title, supplier, currency, exchange_rate, extra_cost, allocation, tracking, note, ordered_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, current_date)) RETURNING id`,
-    [b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null],
+    `INSERT INTO shipments(title, supplier, currency, exchange_rate, extra_cost, allocation, tracking, note, ordered_at, expected_at, preorder_enabled)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::date, current_date),$10,$11) RETURNING id`,
+    [b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled],
   );
   res.status(201).json(await loadShipment(row!.id));
 });
@@ -81,9 +99,10 @@ adminShipmentsRouter.put('/shipments/:id', async (req, res) => {
   } else {
     await query(
       `UPDATE shipments SET title=$2, supplier=$3, currency=$4, exchange_rate=$5, extra_cost=$6, allocation=$7, tracking=$8, note=$9,
-         ordered_at=COALESCE($10::date, ordered_at) WHERE id=$1`,
-      [id, b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null],
+         ordered_at=COALESCE($10::date, ordered_at), expected_at=$11, preorder_enabled=$12 WHERE id=$1`,
+      [id, b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled],
     );
+    await syncPreorderVisibility(id);
   }
   res.json(await loadShipment(id));
 });
@@ -91,6 +110,10 @@ adminShipmentsRouter.put('/shipments/:id', async (req, res) => {
 adminShipmentsRouter.delete('/shipments/:id', async (req, res) => {
   const id = Number(req.params.id);
   await editable(id);
+  const waiting = await preorderOrders(id);
+  if (waiting.length) {
+    throw badRequest(`З цієї поставки вже є передзамовлення (${waiting.map((o) => o.number).join(', ')}). Скасуйте їх або оприбуткуйте поставку.`);
+  }
   await tx(async (client) => {
     // products created only for this shipment and never shown are removed with it
     await client.query(
@@ -105,6 +128,17 @@ adminShipmentsRouter.delete('/shipments/:id', async (req, res) => {
 });
 
 // ---------- items ----------
+
+async function preorderedFor(shipmentId: number, itemId: number): Promise<number> {
+  const row = await one<{ n: number }>(
+    `SELECT COALESCE(SUM(oi.quantity), 0)::int AS n FROM shipment_items si
+     JOIN order_items oi ON oi.preorder_shipment_id = si.shipment_id AND oi.variant_id = si.variant_id
+     JOIN orders o ON o.id = oi.order_id AND o.status NOT IN ('cancelled', 'returned')
+     WHERE si.id = $2 AND si.shipment_id = $1`,
+    [shipmentId, itemId],
+  );
+  return row?.n ?? 0;
+}
 
 adminShipmentsRouter.post('/shipments/:id/items', async (req, res) => {
   const id = Number(req.params.id);
@@ -130,7 +164,6 @@ adminShipmentsRouter.post('/shipments/:id/items', async (req, res) => {
 /** Creates a new (hidden) product with its variants and adds every variant to the shipment. */
 adminShipmentsRouter.post('/shipments/:id/products', async (req, res) => {
   const id = Number(req.params.id);
-  await editable(id);
   const b = z
     .object({
       product: productSchema.omit({ variants: true, is_active: true }),
@@ -140,9 +173,11 @@ adminShipmentsRouter.post('/shipments/:id/products', async (req, res) => {
         .min(1, 'Додайте хоча б один розмір / колір'),
     })
     .parse(req.body);
+  const shipment = await editable(id);
   const productId = await saveProduct(null, {
     ...b.product,
-    is_active: false,
+    // visible straight away when the shipment takes pre-orders
+    is_active: shipment.preorder_enabled,
     variants: b.lines.map((l) => ({ size: l.size, color: l.color, color_hex: l.color_hex, sku: '', stock: 0, price: null })),
   });
   const variants = await query<{ id: number; size: string; color: string }>(
@@ -164,6 +199,10 @@ adminShipmentsRouter.patch('/shipments/:id/items/:itemId', async (req, res) => {
   const id = Number(req.params.id);
   await editable(id);
   const b = z.object({ quantity: z.number().int().min(1).max(10000).optional(), unit_price: z.number().min(0).optional() }).parse(req.body);
+  if (b.quantity !== undefined) {
+    const taken = await preorderedFor(id, Number(req.params.itemId));
+    if (b.quantity < taken) throw badRequest(`Уже передзамовлено ${taken} шт. — кількість не може бути меншою`);
+  }
   await query(
     'UPDATE shipment_items SET quantity = COALESCE($3, quantity), unit_price = COALESCE($4, unit_price) WHERE id = $2 AND shipment_id = $1',
     [id, Number(req.params.itemId), b.quantity ?? null, b.unit_price ?? null],
@@ -174,6 +213,8 @@ adminShipmentsRouter.patch('/shipments/:id/items/:itemId', async (req, res) => {
 adminShipmentsRouter.delete('/shipments/:id/items/:itemId', async (req, res) => {
   const id = Number(req.params.id);
   await editable(id);
+  const taken = await preorderedFor(id, Number(req.params.itemId));
+  if (taken) throw badRequest(`Цю позицію вже передзамовили (${taken} шт.) — видалити не можна`);
   await query('DELETE FROM shipment_items WHERE id = $2 AND shipment_id = $1', [id, Number(req.params.itemId)]);
   res.json(await loadShipment(id));
 });
@@ -187,12 +228,28 @@ adminShipmentsRouter.post('/shipments/:id/receive', async (req, res) => {
   const s = await loadShipment(id);
   if (!s!.items.length) throw badRequest('У поставці немає товарів');
   const publish = z.object({ publish: z.boolean().default(true) }).parse(req.body ?? {}).publish;
+  const waiting = await preorderOrders(id);
   await tx(async (client) => {
+    // pre-ordered units go straight to their orders instead of the shelf
+    const reserved = new Map<number, number>();
+    for (const item of s!.items) if (item.variant_id && item.preordered) reserved.set(item.variant_id, item.preordered);
     for (const item of s!.items) {
       await client.query('UPDATE shipment_items SET landed_cost = $2 WHERE id = $1', [item.id, item.unit_cost]);
       if (!item.variant_id) continue;
-      await client.query('UPDATE product_variants SET stock = stock + $2, cost_price = $3 WHERE id = $1', [item.variant_id, item.quantity, item.unit_cost]);
+      const taken = Math.min(item.quantity, reserved.get(item.variant_id) ?? 0);
+      reserved.set(item.variant_id, (reserved.get(item.variant_id) ?? 0) - taken);
+      await client.query('UPDATE product_variants SET stock = GREATEST(0, stock + $2), cost_price = $3 WHERE id = $1', [
+        item.variant_id,
+        item.quantity - taken,
+        item.unit_cost,
+      ]);
     }
+    // pre-ordered lines get the real landed cost for profit reports
+    await client.query(
+      `UPDATE order_items oi SET cost_price = si.landed_cost FROM shipment_items si
+       WHERE oi.preorder_shipment_id = $1 AND si.shipment_id = $1 AND si.variant_id = oi.variant_id`,
+      [id],
+    );
     if (publish) {
       await client.query(
         `UPDATE products SET is_active = true, updated_at = now()
@@ -203,5 +260,14 @@ adminShipmentsRouter.post('/shipments/:id/receive', async (req, res) => {
     await client.query("UPDATE shipments SET status = 'received', received_at = now() WHERE id = $1", [id]);
   });
   fireAndForget(processStockAlerts());
+  const author = req.user!.name || req.user!.email;
+  for (const o of waiting) {
+    await addHistory(o.id, 'preorder', `Передзамовлення надійшло: поставка «${s!.title}»`, author);
+    if (o.status === 'new' || o.status === 'confirmed') {
+      await query("UPDATE orders SET status = 'processing', updated_at = now() WHERE id = $1", [o.id]);
+      await addHistory(o.id, 'status', `${o.status === 'new' ? 'Нове' : 'Підтверджене'} → Комплектується`, author);
+    }
+    fireAndForget(notifyOrderStatus(o.id, { customMessage: `Гарні новини! Товари з вашого передзамовлення ${o.number} надійшли на склад — готуємо замовлення до відправки.` }));
+  }
   res.json(await loadShipment(id));
 });

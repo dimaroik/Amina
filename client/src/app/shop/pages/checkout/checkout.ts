@@ -12,6 +12,7 @@ import { storage } from '../../../core/storage';
 import { Store } from '../../../core/store.service';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
+import { EtaPipe } from '../../../shared/eta.pipe';
 import { UahPipe } from '../../../shared/uah.pipe';
 
 type Channel = CreateOrderRequest['customer']['contactChannel'];
@@ -40,7 +41,7 @@ export function formatPhone(raw: string): string {
 @Component({
   selector: 'app-checkout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, UahPipe],
+  imports: [FormsModule, RouterLink, Icon, UahPipe, EtaPipe],
   templateUrl: './checkout.html',
   styleUrl: './checkout.scss',
 })
@@ -51,6 +52,7 @@ export class CheckoutPage {
   private router = inject(Router);
   private toasts = inject(Toasts);
   protected cart = inject(Cart);
+  protected hasPreorder = computed(() => this.cart.items().some((i) => i.preorder));
 
   protected channels = CHANNELS;
   protected payIcons = PAY_ICONS;

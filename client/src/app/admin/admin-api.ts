@@ -21,6 +21,8 @@ export interface AdminOrderRow {
   admin_note: string;
   items_count: number;
   preview: string | null;
+  preorder?: boolean;
+  preorder_eta?: string | null;
 }
 
 export interface AdminOrderItem {
@@ -34,6 +36,10 @@ export interface AdminOrderItem {
   image_url: string | null;
   price: number;
   quantity: number;
+  preorder_shipment_id?: number | null;
+  preorder_pending?: boolean;
+  preorder_eta?: string | null;
+  preorder_shipment?: string | null;
 }
 
 export interface AdminOrder {
@@ -366,6 +372,16 @@ export interface ShipmentItem {
   stock: number | null;
   product_slug: string | null;
   activate_on_receive: boolean;
+  preordered?: number;
+}
+
+export interface ShipmentPreorder {
+  id: number;
+  number: string;
+  customer_name: string;
+  status: OrderStatus;
+  created_at: string;
+  quantity: number;
 }
 
 export interface Shipment {
@@ -380,9 +396,109 @@ export interface Shipment {
   tracking: string;
   note: string;
   ordered_at: string;
+  expected_at: string | null;
+  preorder_enabled: boolean;
   received_at: string | null;
   created_at: string;
   totals: ShipmentTotals;
   items: ShipmentItem[];
   previews?: string[];
+  preorders?: ShipmentPreorder[];
+}
+
+// ---------- AI ----------
+
+export interface ProductDraft {
+  name: string;
+  description: string;
+  composition: string;
+  care: string;
+  category_id: number | null;
+  colors: string[];
+  sizes: string[];
+  tags: string[];
+  notes: string;
+}
+
+// ---------- restock report ----------
+
+export interface RestockLine {
+  variant_id: number;
+  size: string;
+  color: string;
+  color_hex: string | null;
+  stock: number;
+  incoming: number;
+  waiting: number;
+  sold: number;
+  per_week: number;
+  cover_days: number | null;
+  suggest: number;
+  sold_out: boolean;
+}
+
+export interface RestockProduct {
+  product_id: number;
+  name: string;
+  slug: string;
+  image: string | null;
+  is_active: boolean;
+  price: number;
+  unit_cost: number | null;
+  sold: number;
+  revenue: number;
+  profit: number | null;
+  margin: number | null;
+  stock: number;
+  incoming: number;
+  suggest: number;
+  lines: RestockLine[];
+}
+
+export interface DeadStock {
+  product_id: number;
+  name: string;
+  slug: string;
+  image: string | null;
+  is_active: boolean;
+  price: number;
+  units: number;
+  sizes: string[];
+  cost_value: number | null;
+  cost_partial: boolean;
+  retail_value: number;
+  last_sale_at: string | null;
+  days_idle: number;
+}
+
+export interface RestockReport {
+  params: { days: number; target: number; dead: number };
+  summary: {
+    sold: number;
+    revenue: number;
+    profit: number | null;
+    margin: number | null;
+    profit_coverage: number;
+    sold_out: number;
+    reorder_units: number;
+    dead_units: number;
+    dead_cost: number;
+    dead_retail: number;
+  };
+  reorder: RestockProduct[];
+  top: Omit<RestockProduct, 'lines'>[];
+  sizes: { name: string; sold: number; stock: number; hex: string | null }[];
+  colors: { name: string; sold: number; stock: number; hex: string | null }[];
+  dead: DeadStock[];
+  shipments: {
+    id: number;
+    title: string;
+    received_at: string;
+    units: number;
+    cost: number;
+    sold: number;
+    revenue: number;
+    sell_through: number;
+    payback: number | null;
+  }[];
 }

@@ -45,3 +45,5 @@
 .sum-row.sale { color: var(--sale); }
 .sum-row.total { font-size: 18px; font-weight: 600; padding-top: 14px; border-top: 1px solid var(--line); }
 .terms { margin: 0; text-align: center; }
+
+.pre-note { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--warning) 9%, var(--surface)); color: var(--ink-2); line-height: 1.45; b { color: var(--ink); font-weight: 600; } }

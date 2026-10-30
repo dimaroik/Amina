@@ -12,6 +12,8 @@ export interface ShipmentRow {
   tracking: string;
   note: string;
   ordered_at: string;
+  expected_at: string | null;
+  preorder_enabled: boolean;
   received_at: string | null;
   created_at: string;
 }
@@ -33,6 +35,8 @@ export interface ShipmentItemRow {
   sale_price?: number | null;
   stock?: number | null;
   product_slug?: string | null;
+  /** units of this variant already pre-ordered from the shipment */
+  preordered?: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -81,16 +85,22 @@ export function computeShipment(s: ShipmentRow, items: ShipmentItemRow[]) {
 export async function loadShipment(id: number) {
   const s = await one<ShipmentRow>('SELECT * FROM shipments WHERE id = $1', [id]);
   if (!s) return null;
-  const items = await query<ShipmentItemRow>(
-    `SELECT si.*, COALESCE(v.price, p.price) AS sale_price, v.stock, p.slug AS product_slug,
-       (SELECT url FROM product_images WHERE product_id = si.product_id ORDER BY sort_order, id LIMIT 1) AS image
-     FROM shipment_items si
-     LEFT JOIN product_variants v ON v.id = si.variant_id
-     LEFT JOIN products p ON p.id = si.product_id
-     WHERE si.shipment_id = $1 ORDER BY si.id`,
-    [id],
-  );
-  return { ...s, ...computeShipment(s, items) };
+  const [items, preorders] = await Promise.all([
+    query<ShipmentItemRow>(
+      `SELECT si.*, COALESCE(v.price, p.price) AS sale_price, v.stock, p.slug AS product_slug,
+         (SELECT url FROM product_images WHERE product_id = si.product_id ORDER BY sort_order, id LIMIT 1) AS image,
+         COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.preorder_shipment_id = si.shipment_id AND oi.variant_id = si.variant_id
+             AND o.status NOT IN ('cancelled', 'returned')), 0)::int AS preordered
+       FROM shipment_items si
+       LEFT JOIN product_variants v ON v.id = si.variant_id
+       LEFT JOIN products p ON p.id = si.product_id
+       WHERE si.shipment_id = $1 ORDER BY si.id`,
+      [id],
+    ),
+    preorderOrders(id),
+  ]);
+  return { ...s, ...computeShipment(s, items), preorders };
 }
 
 /** Official NBU rate for a currency (UAH per unit). */
@@ -102,4 +112,15 @@ export async function nbuRate(currency: string): Promise<{ rate: number; date: s
   const [row] = (await res.json()) as { rate: number; exchangedate: string }[];
   if (!row?.rate) throw new Error('НБУ не повернув курс');
   return { rate: row.rate, date: row.exchangedate };
+}
+
+/** Orders that pre-ordered goods from a shipment (cancelled ones excluded). */
+export function preorderOrders(shipmentId: number) {
+  return query<{ id: number; number: string; customer_name: string; status: string; created_at: string; quantity: number }>(
+    `SELECT o.id, o.number, o.customer_name, o.status, o.created_at, SUM(oi.quantity)::int AS quantity
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE oi.preorder_shipment_id = $1 AND o.status NOT IN ('cancelled', 'returned')
+     GROUP BY o.id ORDER BY o.created_at`,
+    [shipmentId],
+  );
 }

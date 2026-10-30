@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { RouterLink } from '@angular/router';
 import { errorMessage } from '../core/api.service';
 import { Cart } from '../core/cart.service';
+import { preorderWhen } from '../core/labels';
 import type { ProductCard as Product } from '../core/models';
 import { Store } from '../core/store.service';
 import { Toasts } from '../core/toast.service';
@@ -15,7 +16,7 @@ import { UahPipe } from './uah.pipe';
   imports: [RouterLink, Icon, UahPipe],
   template: `
     @let p = product();
-    <article class="pcard" [class.sold-out]="!p.in_stock">
+    <article class="pcard" [class.sold-out]="!p.in_stock && !p.preorder">
       <div class="frame">
       <a class="media" [routerLink]="['/product', p.slug]" [attr.aria-label]="p.name">
         @if (p.images[0]) {
@@ -29,7 +30,10 @@ import { UahPipe } from './uah.pipe';
         <div class="tags">
           @if (discount() > 0) { <span class="tag tag-sale">−{{ discount() }}%</span> }
           @if (p.is_new) { <span class="tag">New</span> }
-          @if (!p.in_stock) { <span class="tag tag-dark">Немає</span> }
+          @if (!p.in_stock) {
+            @if (p.preorder) { <span class="tag tag-pre" [title]="'Передзамовлення, ' + when(p.preorder_eta)">Передзамовлення</span> }
+            @else { <span class="tag tag-dark">Немає</span> }
+          }
         </div>
       </a>
       <button class="wish" [class.on]="wished()" (click)="toggleWish()" [attr.aria-label]="wished() ? 'Прибрати з обраного' : 'Додати в обране'">
@@ -70,6 +74,7 @@ import { UahPipe } from './uah.pipe';
     .alt { opacity: 0; }
     .pcard:hover .alt { opacity: 1; }
     .pcard:hover .img { transform: scale(1.035); }
+    .tag-pre { background: var(--warning); color: #fff; white-space: nowrap; }
     .sold-out .img { filter: grayscale(.35); opacity: .8; }
     .tags { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
     .wish { position: absolute; top: 6px; right: 6px; width: 38px; height: 38px; border: 0; background: transparent; display: grid; place-items: center; color: var(--ink); border-radius: 50%; transition: transform .2s var(--ease), background .2s; }
@@ -101,6 +106,7 @@ export class ProductCardView {
   private store = inject(Store);
   private toasts = inject(Toasts);
   protected busy = signal(false);
+  protected when = (eta: string | null | undefined) => preorderWhen(eta);
 
   protected wished = computed(() => this.wishlist.has(this.product().id));
   protected discount = computed(() => {

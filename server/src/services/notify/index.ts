@@ -57,6 +57,13 @@ function layout(s: Settings, title: string, body: string): string {
   </table></td></tr></table></body></html>`;
 }
 
+/** «очікується ~12 листопада» for a pre-order line. */
+export function preorderWhen(eta: string | null): string {
+  if (!eta) return 'очікується найближчим часом';
+  const d = new Date(`${eta}T12:00:00`);
+  return `очікується ~${d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`;
+}
+
 function itemsTable(o: OrderRow): string {
   const rows = o.items
     .map(
@@ -65,7 +72,9 @@ function itemsTable(o: OrderRow): string {
           i.image_url ? `<img src="${esc(absoluteUrl(i.image_url))}" width="56" height="72" style="object-fit:cover;display:block">` : ''
         }</td>
         <td style="padding:10px 12px;border-bottom:1px solid #f0ebe4;font-size:14px">${esc(i.name)}<br>
-          <span style="color:#9a8f82;font-size:12px">${[i.size && `Розмір: ${esc(i.size)}`, i.color && `Колір: ${esc(i.color)}`].filter(Boolean).join(' · ')} · ${i.quantity} шт.</span></td>
+          <span style="color:#9a8f82;font-size:12px">${[i.size && `Розмір: ${esc(i.size)}`, i.color && `Колір: ${esc(i.color)}`].filter(Boolean).join(' · ')} · ${i.quantity} шт.</span>${
+            i.preorder_pending ? `<br><span style="color:#8c6d3e;font-size:12px">Передзамовлення · ${esc(preorderWhen(i.preorder_eta))}</span>` : ''
+          }</td>
         <td style="padding:10px 0;border-bottom:1px solid #f0ebe4;text-align:right;font-size:14px;white-space:nowrap">${money(i.price * i.quantity)}</td>
       </tr>`,
     )
@@ -80,7 +89,9 @@ function itemsTable(o: OrderRow): string {
 }
 
 function adminTelegramText(o: OrderRow): string {
-  const items = o.items.map((i) => `• ${esc(i.name)}${i.size ? ` (${esc(i.size)})` : ''}${i.color ? `, ${esc(i.color)}` : ''} × ${i.quantity} — ${money(i.price * i.quantity)}`).join('\n');
+  const items = o.items
+    .map((i) => `• ${esc(i.name)}${i.size ? ` (${esc(i.size)})` : ''}${i.color ? `, ${esc(i.color)}` : ''} × ${i.quantity} — ${money(i.price * i.quantity)}${i.preorder_pending ? ` ⏳ передзамовлення (${esc(preorderWhen(i.preorder_eta))})` : ''}`)
+    .join('\n');
   return `🛍 <b>Нове замовлення ${esc(o.number)}</b>\n\n👤 ${esc(o.customer_name)}\n📞 ${esc(o.customer_phone)}${
     o.customer_email ? `\n✉️ ${esc(o.customer_email)}` : ''
   }\n💬 Зв'язок: ${esc(o.contact_channel)}\n\n${items}\n\n🚚 ${esc(deliveryLine(o))}\n💳 ${esc(o.payment_name)}${
