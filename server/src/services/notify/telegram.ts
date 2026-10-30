@@ -74,6 +74,22 @@ async function upload(method: 'sendPhoto' | 'sendDocument', field: 'photo' | 'do
   return json.result!;
 }
 
+/** An album of 2–10 photos; the caption goes under the first one (albums can't carry buttons). */
+export async function sendTelegramAlbum(chatId: string, photos: Buffer[], captionHtml: string): Promise<{ message_id: number }> {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append(
+    'media',
+    JSON.stringify(photos.map((_, i) => ({ type: 'photo', media: `attach://p${i}`, ...(i === 0 ? { caption: captionHtml, parse_mode: 'HTML' } : {}) }))),
+  );
+  photos.forEach((p, i) => form.append(`p${i}`, new Blob([new Uint8Array(p)], { type: 'image/jpeg' }), `p${i}.jpg`));
+  const res = await fetch(`${API_BASE}/bot${config.telegram.botToken}/sendMediaGroup`, { method: 'POST', body: form, signal: AbortSignal.timeout(90_000) });
+  const json = (await res.json()) as { ok: boolean; description?: string; result?: { message_id: number }[] | { message_id: number } };
+  if (!json.ok) throw new Error(`Telegram: ${json.description}`);
+  // the Bot API returns one message per photo; the first one carries the caption
+  return Array.isArray(json.result) ? json.result[0]! : json.result!;
+}
+
 export function sendTelegramPhoto(chatId: string, photo: Buffer, captionHtml: string, keyboard?: TgKeyboard) {
   return upload('sendPhoto', 'photo', chatId, { data: photo, name: 'photo.jpg', type: 'image/jpeg' }, {
     caption: captionHtml,

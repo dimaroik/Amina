@@ -1,11 +1,18 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import QRCode from 'qrcode';
 import { errorMessage } from '../../../core/api.service';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
 import { AdminApi, type AdminSettings } from '../../admin-api';
 import { NpPicker } from '../../ui/np-picker';
+
+interface ChannelQueue {
+  pending: { id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null }[];
+  digest: { products: { id: number; name: string }[]; last: { date: string; count: number } | null };
+}
 
 type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
@@ -30,7 +37,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
 @Component({
   selector: 'app-admin-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon, NpPicker],
+  imports: [FormsModule, RouterLink, DatePipe, Icon, NpPicker],
   template: `
     <div class="adm-page">
       <div class="adm-page-head"><div><h1>Налаштування</h1><div class="sub">Інформація про магазин, оплата, сповіщення й чат-бот</div></div></div>
@@ -137,7 +144,19 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 <div class="field"><label class="label">Текст кнопки під постом</label><input class="input" [(ngModel)]="s.channel.buttonText" maxlength="40" /></div>
                 <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnReceive" /><span class="track"></span> Публікувати новинки, коли поставку оприбутковано</label>
                 <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnAnnounce" /><span class="track"></span> Публікувати «Уже в дорозі / Передзамовлення», коли поставку показано на сайті</label>
-                <p class="adm-hint" style="margin:0">Пост: перше фото товару, назва, ціна (і знижка), опис, розміри, кольори та кнопка на сторінку товару. Будь-який товар можна опублікувати вручну — кнопкою «Telegram» у редакторі товару.</p>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnSale" /><span class="track"></span> Публікувати, коли на товар з'являється знижка (або стає більшою)</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.album" /><span class="track"></span> Альбом до 4 фото, якщо в товару кілька фото</label>
+                <div class="field">
+                  <label class="label">Коли публікувати автоматичні пости</label>
+                  <div class="adm-row nowrap">
+                    <select class="select" style="max-width:220px" [ngModel]="s.channel.autoTime ? 'time' : 'now'" (ngModelChange)="s.channel.autoTime = $event === 'time' ? '19:00' : ''">
+                      <option value="now">Одразу</option><option value="time">О певній годині</option>
+                    </select>
+                    @if (s.channel.autoTime) { <input class="input" type="time" style="max-width:130px" [(ngModel)]="s.channel.autoTime" /> }
+                  </div>
+                  <div class="adm-hint">@if (s.channel.autoTime) { Новинки, «в дорозі» і знижки чекатимуть до {{ s.channel.autoTime }} за Києвом і вийдуть по черзі. } @else { Пост виходить одразу після події. } Ручні пости можна запланувати на будь-який час у редакторі товару.</div>
+                </div>
+                <p class="adm-hint" style="margin:0">Пост: фото товару (або альбом), назва, ціна (і знижка), опис, розміри, кольори та посилання на сторінку товару. Будь-який товар можна опублікувати вручну — кнопкою «Telegram» у редакторі товару.</p>
               </div>
               <div class="adm-card pad adm-stack" style="gap:12px">
                 <div class="adm-section-title">Керування замовленнями з Telegram</div>
@@ -151,6 +170,41 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 <p class="small" style="margin:0">Команди бота: <code>/orders</code> — замовлення в роботі, <code>/today</code> — продажі за сьогодні, <code>/cod</code> — накладений платіж, <code>/help</code>.</p>
                 <p class="adm-hint" style="margin:0">Кнопки працюють лише в чатах зі списку, тож випадкові люди нічого змінити не можуть. Щоб дізнатися свій chat ID, напишіть боту <code>/id</code>.</p>
                 @if (!s.notifications.telegramAdminChatIds.length) { <p class="adm-hint" style="margin:0;color:var(--warning)">Зараз жодного chat ID не вказано — додайте свій у вкладці «Сповіщення».</p> }
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">«Новинки тижня» — добірка одним постом</div>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.digestEnabled" /><span class="track"></span> Публікувати щотижня</label>
+                @if (s.channel.digestEnabled) {
+                  <div class="adm-row nowrap">
+                    <select class="select" style="max-width:180px" [(ngModel)]="s.channel.digestDay">@for (d of weekdays; track d.v) { <option [ngValue]="d.v">{{ d.l }}</option> }</select>
+                    <span class="small">о</span>
+                    <input class="input" type="time" style="max-width:130px" [(ngModel)]="s.channel.digestTime" />
+                  </div>
+                }
+                <p class="adm-hint" style="margin:0">Альбом з першими фото й нумерований список із цінами та посиланнями: товари в наявності, додані або опубліковані як новинка за останні 7 днів (до 10). Якщо нових товарів немає — пост не виходить.</p>
+                @if (queue(); as q) {
+                  <div class="small">Зараз у добірці: <b>{{ q.digest.products.length }}</b>@if (q.digest.products.length) { — {{ digestNames() }} }</div>
+                  @if (q.digest.last) { <div class="adm-hint">Остання добірка: {{ q.digest.last.date }} ({{ q.digest.last.count }} товарів)</div> }
+                }
+                <div><button class="btn btn-ghost btn-xs" [disabled]="!s.channel.chatId || digestBusy()" (click)="postDigest()"><app-icon name="send" [size]="13" /> {{ digestBusy() ? 'Публікуємо…' : 'Опублікувати добірку зараз' }}</button></div>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Заплановані пости</div>
+                @if (queue()?.pending?.length) {
+                  <ul class="queue">
+                    @for (p of queue()!.pending; track p.id) {
+                      <li>
+                        <span class="when">{{ p.run_at | date: 'EEE d MMM, HH:mm' }}</span>
+                        <span class="grow"><a class="link-plain" [routerLink]="['/admin/products', p.product_id]">{{ p.name }}</a> <span class="adm-muted">· {{ kindLabels[p.kind] || p.kind }}@if (p.source === 'manual') { · вручну }</span>
+                          @if (p.error) { <span class="adm-hint" style="color:var(--danger);display:block">Повторимо: {{ p.error }}</span> }</span>
+                        <button class="icon-btn" title="Скасувати" (click)="cancelPost(p.id)"><app-icon name="close" [size]="15" /></button>
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="adm-hint" style="margin:0">Немає — усе опубліковано.</p>
+                }
+                <p class="adm-hint" style="margin:0">На безкоштовному тарифі Render сайт «засинає», якщо його ніхто не відкриває 15 хв. Тоді пост вийде, щойно хтось зайде на сайт. Щоб публікації виходили вчасно, можна налаштувати безкоштовний пінг (напр. cron-job.org кожні 10 хв на адресу сайту).</p>
               </div>
             </div>
           }
@@ -255,6 +309,10 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
   `,
   styles: `
     .qr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+    .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+    .queue li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .queue .when { width: 130px; flex: none; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    .queue .grow { flex: 1; min-width: 0; }
     .steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); }
     .nowrap { flex-wrap: nowrap; }
     code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
@@ -308,6 +366,7 @@ export class SettingsPage {
     });
     effect(() => {
       if (this.tab() === 'payment') this.renderQr();
+      if (this.tab() === 'telegram') this.loadQueue();
     });
   }
 
@@ -332,6 +391,44 @@ export class SettingsPage {
   /** Admin chat IDs are numbers (groups are negative); names like @SomeBot can't receive messages from the bot. */
   badChatIds(ids: string[]) {
     return (ids ?? []).filter((id) => !/^-?\d{5,20}$/.test(id));
+  }
+
+  protected weekdays = [
+    { v: 1, l: 'Понеділок' }, { v: 2, l: 'Вівторок' }, { v: 3, l: 'Середа' }, { v: 4, l: 'Четвер' },
+    { v: 5, l: 'Пʼятниця' }, { v: 6, l: 'Субота' }, { v: 7, l: 'Неділя' },
+  ];
+  protected kindLabels: Record<string, string> = { new: 'новинка', restock: 'знову в наявності', sale: 'знижка', preorder: 'передзамовлення', incoming: 'в дорозі', plain: 'без позначки' };
+  protected queue = signal<ChannelQueue | null>(null);
+  protected digestBusy = signal(false);
+  protected digestNames = computed(() => (this.queue()?.digest.products ?? []).slice(0, 4).map((p) => p.name).join(', ') + ((this.queue()?.digest.products.length ?? 0) > 4 ? '…' : ''));
+
+  loadQueue() {
+    this.api.get<ChannelQueue>('/channel/queue').subscribe((q) => this.queue.set(q));
+  }
+
+  cancelPost(id: number) {
+    this.api.delete(`/channel/queue/${id}`).subscribe({
+      next: () => {
+        this.toasts.show('Пост скасовано');
+        this.loadQueue();
+      },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  postDigest() {
+    this.digestBusy.set(true);
+    this.api.post<{ count: number }>('/channel/digest', {}).subscribe({
+      next: (r) => {
+        this.digestBusy.set(false);
+        this.toasts.success(`Добірку з ${r.count} товарів опубліковано`);
+        this.loadQueue();
+      },
+      error: (e) => {
+        this.digestBusy.set(false);
+        this.toasts.error(errorMessage(e));
+      },
+    });
   }
 
   testChannel() {

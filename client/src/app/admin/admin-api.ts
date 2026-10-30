@@ -202,7 +202,18 @@ export interface AdminSettings {
   settings: {
     store: Record<string, string>;
     payment: { monoJarUrl: string; iban: string; recipient: string; edrpou: string; bankName: string; paymentPurpose: string; codBlockAfterRefusals: number };
-    channel: { chatId: string; postOnReceive: boolean; postOnAnnounce: boolean; buttonText: string };
+    channel: {
+      chatId: string;
+      postOnReceive: boolean;
+      postOnAnnounce: boolean;
+      buttonText: string;
+      autoTime: string;
+      album: boolean;
+      postOnSale: boolean;
+      digestEnabled: boolean;
+      digestDay: number;
+      digestTime: string;
+    };
     notifications: {
       adminEmails: string[];
       telegramAdminChatIds: string[];

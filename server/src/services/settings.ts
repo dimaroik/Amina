@@ -68,6 +68,15 @@ export interface ChannelSettings {
   postOnReceive: boolean;
   postOnAnnounce: boolean;
   buttonText: string;
+  /** '' — automatic posts go out right away; 'HH:MM' — they wait for that time (Kyiv) */
+  autoTime: string;
+  /** products with 2+ photos are posted as an album of up to 4 */
+  album: boolean;
+  postOnSale: boolean;
+  digestEnabled: boolean;
+  /** ISO weekday: 1 — Monday … 7 — Sunday */
+  digestDay: number;
+  digestTime: string;
 }
 
 export interface Settings {
@@ -136,6 +145,12 @@ export const defaultSettings: Settings = {
     postOnReceive: true,
     postOnAnnounce: true,
     buttonText: 'Замовити на сайті',
+    autoTime: '',
+    album: true,
+    postOnSale: true,
+    digestEnabled: true,
+    digestDay: 5,
+    digestTime: '18:00',
   },
   chatbot: {
     enabled: true,

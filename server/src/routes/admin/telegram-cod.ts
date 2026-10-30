@@ -1,7 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { query } from '../../db/pool.js';
-import { channelReady, lastPost, postProduct, suggestKind, type PostKind } from '../../services/channel.js';
+import {
+  cancelPost,
+  channelReady,
+  digestProducts,
+  lastDigest,
+  lastPost,
+  pendingPosts,
+  postDigest,
+  postProduct,
+  scheduleManual,
+  suggestKind,
+  type PostKind,
+} from '../../services/channel.js';
 import { codSummary, markCodPaid, PHONE_KEY_SQL, phoneKey, setPrepayOnly } from '../../services/cod.js';
 import { sendTelegram, telegramEnabled } from '../../services/notify/telegram.js';
 import { addHistory } from '../../services/orders.js';
@@ -75,16 +87,45 @@ adminTelegramCodRouter.put('/customer-flags', async (req, res) => {
 
 adminTelegramCodRouter.get('/products/:id/telegram', async (req, res) => {
   const id = Number(req.params.id);
-  res.json({ ready: await channelReady(), last: await lastPost(id), suggested: await suggestKind(id) });
+  res.json({ ready: await channelReady(), last: await lastPost(id), suggested: await suggestKind(id), scheduled: await pendingPosts(id) });
 });
 
 adminTelegramCodRouter.post('/products/:id/telegram', async (req, res) => {
-  const { kind } = z.object({ kind: z.enum(['new', 'restock', 'preorder', 'incoming', 'sale', 'plain']).optional() }).parse(req.body ?? {});
+  const { kind, at } = z
+    .object({ kind: z.enum(['new', 'restock', 'preorder', 'incoming', 'sale', 'plain']).optional(), at: z.string().datetime({ offset: true }).optional() })
+    .parse(req.body ?? {});
+  const id = Number(req.params.id);
+  if (at) {
+    const when = new Date(at);
+    if (when.getTime() < Date.now() - 60_000) throw badRequest('Цей час уже минув');
+    if (!(await channelReady())) throw badRequest('Канал не підключено (Налаштування → Telegram)');
+    return res.status(201).json({ scheduled: await scheduleManual(id, (kind ?? (await suggestKind(id))) as PostKind, when) });
+  }
   try {
-    res.json(await postProduct(Number(req.params.id), kind as PostKind | undefined));
+    res.json(await postProduct(id, kind as PostKind | undefined));
   } catch (err) {
     throw new HttpError(502, friendlyTelegramError(err));
   }
+});
+
+adminTelegramCodRouter.get('/channel/queue', async (_req, res) => {
+  res.json({ pending: await pendingPosts(), digest: { products: await digestProducts(), last: await lastDigest() } });
+});
+
+adminTelegramCodRouter.delete('/channel/queue/:id', async (req, res) => {
+  if (!(await cancelPost(Number(req.params.id)))) throw badRequest('Пост уже опубліковано або скасовано');
+  res.json({ ok: true });
+});
+
+adminTelegramCodRouter.post('/channel/digest', async (_req, res) => {
+  let r;
+  try {
+    r = await postDigest();
+  } catch (err) {
+    throw new HttpError(502, friendlyTelegramError(err));
+  }
+  if (!r) throw badRequest('За останні 7 днів немає нових товарів у наявності — добірку не опубліковано');
+  res.json(r);
 });
 
 adminTelegramCodRouter.post('/channel/test', async (req, res) => {
