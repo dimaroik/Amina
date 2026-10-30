@@ -23,6 +23,7 @@ import { publicRouter } from './routes/public.js';
 import { reviewsRouter } from './routes/reviews.js';
 import { adminReviewsRouter } from './routes/admin/reviews.js';
 import { adminShipmentsRouter } from './routes/admin/shipments.js';
+import { adminInsightsRouter } from './routes/admin/insights.js';
 import { stockAlertsRouter } from './routes/stock-alerts.js';
 import { processStockAlerts } from './services/stock-alerts.js';
 import { startTrackingJob } from './services/np-tracking.js';
@@ -59,7 +60,7 @@ export function createApp() {
   api.use(chatRouter);
   api.use(stockAlertsRouter);
   api.use(reviewsRouter);
-  api.use('/admin', requireAdmin, adminOrdersRouter, adminCatalogRouter, adminMiscRouter, adminReviewsRouter, adminShipmentsRouter);
+  api.use('/admin', requireAdmin, adminOrdersRouter, adminCatalogRouter, adminMiscRouter, adminReviewsRouter, adminShipmentsRouter, adminInsightsRouter);
   api.use((_req, _res, next) => next(new HttpError(404, 'Маршрут не знайдено')));
   api.use(errorHandler);
   app.use('/api', api);

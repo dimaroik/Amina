@@ -38,3 +38,10 @@ export const PAYMENT_STATUSES = Object.keys(PAYMENT_STATUS_LABELS) as PaymentSta
 
 /** Customer-facing progress steps (cancelled/returned are shown separately). */
 export const ORDER_PROGRESS: OrderStatus[] = ['new', 'confirmed', 'processing', 'shipped', 'delivered'];
+
+/** «очікується ~14 листопада» for a pre-ordered item. */
+export function preorderWhen(eta: string | null | undefined, short = false): string {
+  if (!eta) return short ? 'скоро' : 'очікується найближчим часом';
+  const d = new Date(`${eta}T12:00:00`).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+  return short ? `~${d}` : `очікується ~${d}`;
+}

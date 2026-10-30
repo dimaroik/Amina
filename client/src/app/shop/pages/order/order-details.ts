@@ -5,13 +5,14 @@ import { ORDER_PROGRESS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../.
 import type { OrderResponse } from '../../../core/models';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
+import { EtaPipe } from '../../../shared/eta.pipe';
 import { UahPipe } from '../../../shared/uah.pipe';
 
 /** Full order view: progress, payment instructions (incl. Monobank QR), items and delivery. */
 @Component({
   selector: 'app-order-details',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, DatePipe, Icon, UahPipe],
+  imports: [RouterLink, DatePipe, Icon, UahPipe, EtaPipe],
   templateUrl: './order-details.html',
   styleUrl: './order-details.scss',
 })

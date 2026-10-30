@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { one, query, tx } from '../../db/pool.js';
 import { ORDER_STATUSES, PAYMENT_STATUSES, orderStatusLabel, paymentStatusLabel } from '../../services/labels.js';
 import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js';
-import { addHistory, getOrderFull } from '../../services/orders.js';
+import { addHistory, getOrderFull, PENDING_PREORDER_SQL } from '../../services/orders.js';
 import { processStockAlerts } from '../../services/stock-alerts.js';
 import { syncTracking } from '../../services/np-tracking.js';
 import { createRecipient, createWaybill, deleteWaybill, getSender, NovaPoshtaError, waybillPdf } from '../../services/novaposhta.js';
@@ -19,6 +19,7 @@ const listSchema = z.object({
   q: z.string().trim().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  preorder: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(25),
 });
@@ -35,6 +36,7 @@ function buildFilter(p: z.infer<typeof listSchema>) {
   }
   if (p.from) where.push(`o.created_at >= ${add(p.from)}::date`);
   if (p.to) where.push(`o.created_at < (${add(p.to)}::date + 1)`);
+  if (p.preorder) where.push(`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND ${PENDING_PREORDER_SQL})`);
   return { sql: where.join(' AND '), values };
 }
 
@@ -46,7 +48,10 @@ adminOrdersRouter.get('/orders', async (req, res) => {
       `SELECT o.id, o.number, o.status, o.payment_status, o.customer_name, o.customer_phone, o.customer_email,
          o.delivery_name, o.delivery_city, o.payment_name, o.total, o.created_at, o.tracking_number, o.admin_note,
          (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = o.id) AS items_count,
-         (SELECT image_url FROM order_items WHERE order_id = o.id ORDER BY id LIMIT 1) AS preview
+         (SELECT image_url FROM order_items WHERE order_id = o.id ORDER BY id LIMIT 1) AS preview,
+         (SELECT MIN(s.expected_at) FROM order_items oi JOIN shipments s ON s.id = oi.preorder_shipment_id
+           WHERE oi.order_id = o.id AND s.status = 'in_transit') AS preorder_eta,
+         EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND ${PENDING_PREORDER_SQL}) AS preorder
        FROM orders o WHERE ${sql} ORDER BY o.created_at DESC LIMIT ${p.limit} OFFSET ${(p.page - 1) * p.limit}`,
       values,
     ),
@@ -130,9 +135,12 @@ async function syncStock(client: import('pg').PoolClient, orderId: number, from:
   const released = (s: string) => s === 'cancelled' || s === 'returned';
   if (released(from) === released(to)) return;
   const sign = released(to) ? 1 : -1;
+  // lines pre-ordered from a shipment still on the way never took stock
   await client.query(
-    `UPDATE product_variants v SET stock = GREATEST(0, v.stock + $2 * oi.quantity)
-     FROM order_items oi WHERE oi.order_id = $1 AND oi.variant_id = v.id`,
+    `UPDATE product_variants v SET stock = GREATEST(0, v.stock + $2 * t.qty)
+     FROM (SELECT oi.variant_id, SUM(oi.quantity) AS qty FROM order_items oi
+           WHERE oi.order_id = $1 AND oi.variant_id IS NOT NULL AND NOT ${PENDING_PREORDER_SQL} GROUP BY oi.variant_id) t
+     WHERE v.id = t.variant_id`,
     [orderId, sign],
   );
 }
@@ -201,12 +209,12 @@ adminOrdersRouter.put('/orders/:id/items', async (req, res) => {
     const { rows: [order] } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [id]);
     if (!order) throw notFound('Замовлення не знайдено');
     const holdsStock = !['cancelled', 'returned'].includes(order.status);
-    const { rows: current } = await client.query('SELECT * FROM order_items WHERE order_id = $1', [id]);
+    const { rows: current } = await client.query(`SELECT oi.*, ${PENDING_PREORDER_SQL} AS pending FROM order_items oi WHERE oi.order_id = $1`, [id]);
     const keep = new Set(body.items.filter((i) => i.id).map((i) => i.id));
     for (const old of current) {
       if (!keep.has(old.id)) {
         await client.query('DELETE FROM order_items WHERE id = $1', [old.id]);
-        if (holdsStock && old.variant_id) await client.query('UPDATE product_variants SET stock = stock + $2 WHERE id = $1', [old.variant_id, old.quantity]);
+        if (holdsStock && old.variant_id && !old.pending) await client.query('UPDATE product_variants SET stock = stock + $2 WHERE id = $1', [old.variant_id, old.quantity]);
       }
     }
     for (const item of body.items) {
@@ -214,7 +222,7 @@ adminOrdersRouter.put('/orders/:id/items', async (req, res) => {
         const old = current.find((c) => c.id === item.id);
         if (!old) throw badRequest('Позицію не знайдено');
         await client.query('UPDATE order_items SET quantity = $2, price = COALESCE($3, price) WHERE id = $1', [item.id, item.quantity, item.price ?? null]);
-        if (holdsStock && old.variant_id && old.quantity !== item.quantity) {
+        if (holdsStock && old.variant_id && !old.pending && old.quantity !== item.quantity) {
           await client.query('UPDATE product_variants SET stock = GREATEST(0, stock - $2) WHERE id = $1', [old.variant_id, item.quantity - old.quantity]);
         }
       } else if (item.variant_id) {

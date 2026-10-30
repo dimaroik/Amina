@@ -77,3 +77,5 @@
 
 .ttn { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #f6f8f5; border: 1px solid #dfe8dc; border-radius: 8px; }
 .ttn .del { color: var(--danger); }
+
+.pre-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; } }

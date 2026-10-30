@@ -70,6 +70,12 @@
                     <div class="grow">
                       @if (it.product_id) { <a [routerLink]="['/admin/products', it.product_id]" class="t">{{ it.name }}</a> } @else { <span class="t">{{ it.name }}</span> }
                       <div class="adm-muted tiny">{{ it.size }}{{ it.color ? ' · ' + it.color : '' }}{{ it.sku ? ' · ' + it.sku : '' }}</div>
+                      @if (it.preorder_pending) {
+                        <div class="tiny pre-item"><span class="adm-pill warn">Передзамовлення</span>
+                          @if (it.preorder_shipment_id) { <a [routerLink]="['/admin/shipments', it.preorder_shipment_id]">«{{ it.preorder_shipment }}»</a> } · {{ it.preorder_eta | eta }}</div>
+                      } @else if (it.preorder_shipment_id) {
+                        <div class="tiny adm-muted">Передзамовлення · надійшло з «{{ it.preorder_shipment }}»</div>
+                      }
                     </div>
                     <div class="num">{{ it.quantity }} × {{ it.price | uah }}</div>
                     <div class="num"><b>{{ it.price * it.quantity | uah }}</b></div>

@@ -5,6 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Subject, debounceTime, switchMap, of } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { errorMessage } from '../../../core/api.service';
+import { preorderWhen } from '../../../core/labels';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
 import { UahPipe } from '../../../shared/uah.pipe';
@@ -29,6 +30,8 @@ interface Header {
   tracking: string;
   note: string;
   ordered_at: string;
+  expected_at: string;
+  preorder_enabled: boolean;
 }
 
 @Component({
@@ -79,6 +82,16 @@ interface Header {
                   <select class="select" [(ngModel)]="h.allocation" [disabled]="locked()">
                     <option value="value">Пропорційно ціні речі</option><option value="quantity">Порівну на кожну одиницю</option></select></div>
                 <div class="field full"><label class="label">Нотатка</label><textarea class="textarea" rows="2" [(ngModel)]="h.note"></textarea></div>
+                @if (!locked()) {
+                  <div class="field full preorder-box" [class.on]="h.preorder_enabled">
+                    <label class="adm-switch"><input type="checkbox" [(ngModel)]="h.preorder_enabled" /><span class="track"></span> <b>Приймати передзамовлення</b></label>
+                    <div class="adm-hint">Речі з цієї посилки, яких немає на складі, можна буде замовити на сайті наперед — з позначкою «Передзамовлення» й датою. Більше, ніж їде в посилці, продати не вийде. Нові товари поставки одразу з'являться на сайті.</div>
+                    @if (h.preorder_enabled) {
+                      <div class="field eta"><label class="label">Очікуємо на складі</label><input class="input" type="date" [(ngModel)]="h.expected_at" [min]="h.ordered_at" />
+                        <div class="adm-hint">Покупці побачать «очікується ~{{ etaPreview() }}». Можна залишити порожнім.</div></div>
+                    }
+                  </div>
+                }
               </div>
               <div class="adm-row" style="justify-content:flex-end;margin-top:12px">
                 <button class="btn btn-sm" [disabled]="busy() || !h.title.trim() || !(h.exchange_rate > 0)" (click)="saveHeader()">{{ isNew() ? 'Створити поставку' : 'Зберегти' }}</button>
@@ -118,7 +131,7 @@ interface Header {
               @if (s.items.length) {
                 <div class="adm-table-wrap">
                   <table class="adm-table">
-                    <thead><tr><th>Товар</th><th class="num">К-сть</th><th class="num">Ціна, {{ s.currency }}</th><th class="num">Собівартість 1 шт.</th><th class="num">Продаж</th><th class="num">Маржа</th><th></th></tr></thead>
+                    <thead><tr><th>Товар</th><th class="num">К-сть</th><th class="num">Ціна, {{ s.currency }}</th><th class="num">Собівартість 1 шт.</th><th class="num">Продаж</th><th class="num">Маржа</th>@if (hasPreorders()) { <th class="num">Передзам.</th> }<th></th></tr></thead>
                     <tbody>
                       @for (i of s.items; track i.id) {
                         <tr>
@@ -127,7 +140,7 @@ interface Header {
                               @if (i.image) { <img [src]="i.image" class="adm-thumb-sm" alt="" /> } @else { <span class="adm-thumb-sm"></span> }
                               <div>
                                 @if (i.product_id) { <a class="t link-plain" [routerLink]="['/admin/products', i.product_id]">{{ i.name }}</a> } @else { <div class="t">{{ i.name }}</div> }
-                                <div class="s">{{ variantLabel(i) }}@if (i.activate_on_receive && s.status === 'in_transit') { · <span class="adm-pill">новий, прихований</span> }</div>
+                                <div class="s">{{ variantLabel(i) }}@if (i.activate_on_receive && s.status === 'in_transit') { · <span class="adm-pill" [title]="s.preorder_enabled ? 'Показується на сайті для передзамовлення' : 'З’явиться на сайті після оприбуткування'">{{ s.preorder_enabled ? 'новий · передзамовлення' : 'новий, прихований' }}</span> }</div>
                               </div>
                             </div>
                           </td>
@@ -140,7 +153,8 @@ interface Header {
                           <td class="num" data-label="Собівартість"><b>{{ i.unit_cost | uah }}</b></td>
                           <td class="num" data-label="Продаж">{{ i.sale_price | uah }}</td>
                           <td class="num" data-label="Маржа"><span class="adm-pill" [class.ok]="(i.margin ?? 0) >= 40" [class.warn]="(i.margin ?? 0) < 40 && (i.margin ?? 0) >= 15" [class.danger]="(i.margin ?? 0) < 15">{{ i.margin !== null ? (i.margin | number: '1.0-0') + '%' : '—' }}</span></td>
-                          <td>@if (!locked()) { <button class="icon-btn" (click)="removeItem(i)" title="Прибрати"><app-icon name="trash" [size]="15" /></button> }</td>
+                          @if (hasPreorders()) { <td class="num" data-label="Передзам.">@if (i.preordered) { <span class="adm-pill warn">{{ i.preordered }} з {{ i.quantity }}</span> } @else { <span class="adm-muted">—</span> }</td> }
+                          <td>@if (!locked() && !i.preordered) { <button class="icon-btn" (click)="removeItem(i)" title="Прибрати"><app-icon name="trash" [size]="15" /></button> }</td>
                         </tr>
                       }
                     </tbody>
@@ -169,6 +183,16 @@ interface Header {
             <div class="big"><span class="adm-muted small">Очікувана виручка</span><b>{{ s.totals.expected_revenue | uah }}</b></div>
             <div class="big"><span class="adm-muted small">Очікуваний прибуток</span><b [class.neg]="s.totals.expected_profit < 0">{{ s.totals.expected_profit | uah }}</b></div>
             @if (s.totals.margin !== null) { <div class="adm-hint">Маржа {{ s.totals.margin | number: '1.0-0' }}% — за умови продажу всіх речей за поточними цінами.</div> }
+            @if (s.preorders?.length) {
+              <div class="adm-sep"></div>
+              <div class="adm-section-title">Передзамовлення ({{ s.preorders!.length }})</div>
+              <ul class="pre-list">
+                @for (o of s.preorders; track o.id) {
+                  <li><a [routerLink]="['/admin/orders', o.id]">{{ o.number }}</a><span class="adm-muted small">{{ o.customer_name }}</span><span class="small">{{ o.quantity }} шт.</span></li>
+                }
+              </ul>
+              @if (s.status === 'in_transit') { <p class="adm-hint" style="margin:0">Після оприбуткування ці замовлення перейдуть у «Комплектується», а клієнтки отримають повідомлення.</p> }
+            }
             @if (s.status === 'in_transit') {
               <div class="adm-sep"></div>
               <p class="adm-hint" style="margin:0">«Оприбуткувати» — коли посилка приїхала: залишки додадуться на склад, собівартість запишеться в товари, нові товари з'являться на сайті.</p>
@@ -195,6 +219,12 @@ interface Header {
     .big b { font-size: 18px; font-variant-numeric: tabular-nums; }
     .neg { color: var(--danger); }
     .del { color: var(--danger); align-self: flex-start; }
+    .preorder-box { padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); gap: 6px; }
+    .preorder-box.on { border-style: solid; border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: color-mix(in srgb, var(--warning) 6%, transparent); }
+    .preorder-box .eta { max-width: 260px; margin-top: 6px; }
+    .pre-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .pre-list li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; }
+    .pre-list a { font-weight: 600; color: var(--ink); }
   `,
 })
 export class ShipmentDetailPage {
@@ -217,6 +247,7 @@ export class ShipmentDetailPage {
 
   protected isNew = computed(() => !this.id() || this.id() === 'new');
   protected locked = computed(() => this.s()?.status === 'received');
+  protected hasPreorders = computed(() => (this.s()?.items ?? []).some((i) => i.preordered));
 
   constructor() {
     effect(() => {
@@ -244,7 +275,10 @@ export class ShipmentDetailPage {
   }
 
   private blank(): Header {
-    return { title: '', supplier: '', currency: 'USD', exchange_rate: 41, extra_cost: 0, allocation: 'value', tracking: '', note: '', ordered_at: new Date().toISOString().slice(0, 10) };
+    return {
+      title: '', supplier: '', currency: 'USD', exchange_rate: 41, extra_cost: 0, allocation: 'value', tracking: '', note: '',
+      ordered_at: new Date().toISOString().slice(0, 10), expected_at: '', preorder_enabled: false,
+    };
   }
 
   private apply(s: Shipment) {
@@ -252,7 +286,12 @@ export class ShipmentDetailPage {
     this.h = {
       title: s.title, supplier: s.supplier, currency: s.currency, exchange_rate: Number(s.exchange_rate), extra_cost: Number(s.extra_cost),
       allocation: s.allocation, tracking: s.tracking, note: s.note, ordered_at: String(s.ordered_at).slice(0, 10),
+      expected_at: s.expected_at ? String(s.expected_at).slice(0, 10) : '', preorder_enabled: s.preorder_enabled,
     };
+  }
+
+  etaPreview() {
+    return this.h.expected_at ? preorderWhen(this.h.expected_at, true).slice(1) : 'найближчим часом';
   }
 
   variantLabel(i: ShipmentItem) {
@@ -280,7 +319,7 @@ export class ShipmentDetailPage {
 
   saveHeader() {
     this.busy.set(true);
-    const body = { ...this.h, exchange_rate: Number(this.h.exchange_rate), extra_cost: Number(this.h.extra_cost) || 0 };
+    const body = { ...this.h, exchange_rate: Number(this.h.exchange_rate), extra_cost: Number(this.h.extra_cost) || 0, expected_at: this.h.expected_at || null };
     const req = this.isNew() ? this.api.post<Shipment>('/shipments', body) : this.api.put<Shipment>(`/shipments/${this.s()!.id}`, body);
     req.subscribe({
       next: (s) => {
@@ -332,7 +371,9 @@ export class ShipmentDetailPage {
   async receive() {
     const s = this.s()!;
     const ok = await this.confirm.ask(
-      `Оприбуткувати «${s.title}»? На склад додасться ${s.totals.units} шт., собівартість запишеться в товари, нові товари з'являться на сайті. Після цього суми поставки не редагуються.`,
+      `Оприбуткувати «${s.title}»? На склад додасться ${s.totals.units - (s.items.reduce((n, i) => n + (i.preordered ?? 0), 0))} шт., собівартість запишеться в товари, нові товари з'являться на сайті.${
+        s.preorders?.length ? ` ${s.preorders.length} передзамовл. перейдуть у «Комплектується», клієнтки отримають повідомлення.` : ''
+      } Після цього суми поставки не редагуються.`,
       { confirmLabel: 'Оприбуткувати' },
     );
     if (!ok) return;
@@ -352,6 +393,9 @@ export class ShipmentDetailPage {
 
   async remove() {
     if (!(await this.confirm.ask('Видалити поставку? Нові товари, створені в ній і ще не показані на сайті, теж видаляться.', { danger: true, confirmLabel: 'Видалити' }))) return;
-    this.api.delete(`/shipments/${this.s()!.id}`).subscribe(() => this.router.navigateByUrl('/admin/shipments'));
+    this.api.delete(`/shipments/${this.s()!.id}`).subscribe({
+      next: () => this.router.navigateByUrl('/admin/shipments'),
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
   }
 }

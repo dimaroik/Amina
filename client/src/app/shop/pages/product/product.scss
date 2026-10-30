@@ -38,6 +38,12 @@
 .size { height: 46px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 14px; transition: all .2s; position: relative; }
 .size:hover:not(:disabled) { border-color: var(--ink); }
 .size.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.size.pre::after { content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
+.size.on.pre::after { background: #e9c98a; }
+.preorder-note { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 4px 0 18px; background: color-mix(in srgb, var(--warning) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent); border-radius: var(--radius-lg); color: var(--ink-2); }
+.preorder-note app-icon { color: var(--warning); flex: none; margin-top: 1px; }
+.preorder-note b { display: block; color: var(--ink); font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+.preorder-note .small { display: block; line-height: 1.45; }
 .size.out { color: #c2b9ae; cursor: not-allowed; background: linear-gradient(to top right, transparent calc(50% - .5px), var(--line-strong) 50%, transparent calc(50% + .5px)); }
 .shake { animation: shake .45s; }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }

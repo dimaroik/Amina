@@ -9,6 +9,8 @@ interface CheckResult {
     variantId: number;
     available: boolean;
     stock: number;
+    preorder?: boolean;
+    eta?: string | null;
     price?: number;
     oldPrice?: number | null;
     name?: string;
@@ -92,9 +94,19 @@ export class Cart {
         continue;
       }
       const quantity = Math.min(item.quantity, r.stock);
-      if (quantity < item.quantity) notes.push(`«${item.name}»: доступно лише ${r.stock} шт.`);
+      if (quantity < item.quantity) notes.push(`«${item.name}»: ${r.preorder ? 'для передзамовлення ' : ''}доступно лише ${r.stock} шт.`);
       if (r.price !== undefined && r.price !== item.price) notes.push(`Ціна «${item.name}» змінилась`);
-      next.push({ ...item, quantity, stock: r.stock, price: r.price ?? item.price, oldPrice: r.oldPrice ?? null, image: r.image ?? item.image });
+      if (r.preorder && !item.preorder) notes.push(`«${item.name}» (${item.size}) закінчився — його можна передзамовити з нової партії`);
+      next.push({
+        ...item,
+        quantity,
+        stock: r.stock,
+        price: r.price ?? item.price,
+        oldPrice: r.oldPrice ?? null,
+        image: r.image ?? item.image,
+        preorder: Boolean(r.preorder),
+        eta: r.preorder ? (r.eta ?? null) : null,
+      });
     }
     this.items.set(next);
     return notes;

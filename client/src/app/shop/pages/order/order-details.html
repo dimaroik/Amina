@@ -94,7 +94,7 @@
     @for (i of ord.items; track $index) {
       <div class="it">
         <span class="th">@if (i.image_url) { <img [src]="i.image_url" [alt]="i.name" /> }</span>
-        <span class="ln"><span>{{ i.name }}</span><span class="tiny muted">{{ i.color }}@if (i.size) { · {{ i.size }} } · {{ i.quantity }} шт.</span></span>
+        <span class="ln"><span>{{ i.name }}</span><span class="tiny muted">{{ i.color }}@if (i.size) { · {{ i.size }} } · {{ i.quantity }} шт.</span>@if (i.preorder) { <span class="pre-line">Передзамовлення · {{ i.preorder_eta | eta }}</span> }</span>
         <span class="small">{{ i.price * i.quantity | uah }}</span>
       </div>
     }

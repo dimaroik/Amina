@@ -3,7 +3,8 @@ import { FormsModule } from '@angular/forms';
 import { errorMessage } from '../../../core/api.service';
 import type { Category } from '../../../core/models';
 import { Icon } from '../../../shared/icon';
-import { AdminApi, flattenCategories, type Currency, type Shipment } from '../../admin-api';
+import { AdminApi, flattenCategories, type Currency, type ProductDraft, type Shipment } from '../../admin-api';
+import { AiFill } from '../../ui/ai-fill';
 import { ImageUpload } from '../../ui/image-upload';
 import { Modal } from '../../ui/modal';
 
@@ -20,10 +21,11 @@ interface Line { size: string; color: string; color_hex: string | null; quantity
 @Component({
   selector: 'adm-shipment-new-product',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon, Modal, ImageUpload],
+  imports: [FormsModule, Icon, Modal, ImageUpload, AiFill],
   template: `
     <adm-modal title="Новий товар у поставці" width="760px" (close)="close.emit()">
       <div class="adm-stack" style="gap:16px">
+        <adm-ai-fill [images]="images()" [colors]="colorNames" [sizes]="sizes" (draft)="applyDraft($event)" />
         <div class="form-grid">
           <div class="field full"><label class="label">Назва *</label><input class="input" [(ngModel)]="name" placeholder="Сукня трикотажна" /></div>
           <div class="field"><label class="label">Категорія</label>
@@ -32,7 +34,9 @@ interface Line { size: string; color: string; color_hex: string | null; quantity
           <div class="field"><label class="label">Закупівельна ціна за 1 шт., {{ currency() }}</label><input class="input" type="number" min="0" step="0.01" [(ngModel)]="unitPrice" /></div>
           <div class="field"><label class="label">Ціна продажу, ₴ *</label><input class="input" type="number" min="0" [(ngModel)]="price" /></div>
           <div class="field"><label class="label">Стара ціна, ₴</label><input class="input" type="number" min="0" [(ngModel)]="oldPrice" placeholder="—" /></div>
-          <div class="field full"><label class="label">Опис</label><textarea class="textarea" rows="2" [(ngModel)]="description"></textarea></div>
+          <div class="field full"><label class="label">Опис</label><textarea class="textarea" rows="3" [(ngModel)]="description"></textarea></div>
+          <div class="field"><label class="label">Склад</label><input class="input" [(ngModel)]="composition" placeholder="100% бавовна" /></div>
+          <div class="field"><label class="label">Догляд</label><input class="input" [(ngModel)]="care" placeholder="Прання при 30°C" /></div>
         </div>
 
         <div class="field">
@@ -108,6 +112,10 @@ export class ShipmentNewProductDialog {
   protected oldPrice: number | null = null;
   protected unitPrice: number | null = null;
   protected description = '';
+  protected composition = '';
+  protected care = '';
+  protected tags: string[] = [];
+  protected colorNames = COLORS.map((c) => c[0]);
   protected bulkQty = 1;
   protected lines = signal<Line[]>([]);
   protected totalQty = computed(() => this.lines().reduce((n, l) => n + (Number(l.quantity) || 0), 0));
@@ -145,6 +153,18 @@ export class ShipmentNewProductDialog {
     this.lines.set(out);
   }
 
+  applyDraft(d: ProductDraft) {
+    if (d.name) this.name = d.name;
+    if (d.description) this.description = d.description;
+    if (d.composition) this.composition = d.composition;
+    if (d.care) this.care = d.care;
+    if (d.category_id !== null) this.categoryId = d.category_id;
+    this.tags = d.tags;
+    if (d.sizes.length) this.pickedSizes.set(new Set(d.sizes));
+    if (d.colors.length) this.pickedColors.set(new Set(d.colors));
+    this.rebuild();
+  }
+
   setAll(v: number) {
     this.bulkQty = Number(v) || 1;
     this.lines.update((l) => l.map((x) => ({ ...x, quantity: this.bulkQty })));
@@ -168,6 +188,9 @@ export class ShipmentNewProductDialog {
         price: Number(this.price),
         old_price: this.oldPrice ? Number(this.oldPrice) : null,
         description: this.description,
+        composition: this.composition,
+        care: this.care,
+        tags: this.tags,
         images: this.images().map((url) => ({ url, alt: '', color: null })),
         is_new: true,
       },

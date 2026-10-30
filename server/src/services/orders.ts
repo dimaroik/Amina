@@ -11,6 +11,11 @@ export interface OrderItemRow {
   image_url: string | null;
   price: number;
   quantity: number;
+  preorder_shipment_id: number | null;
+  /** still waiting for its shipment (stock is not taken yet) */
+  preorder_pending: boolean;
+  preorder_eta: string | null;
+  preorder_shipment: string | null;
 }
 
 export type OrderRow = Record<string, any> & {
@@ -35,7 +40,12 @@ export type OrderRow = Record<string, any> & {
 export async function getOrderFull(id: number): Promise<OrderRow | null> {
   const order = await one<OrderRow>('SELECT * FROM orders WHERE id = $1', [id]);
   if (!order) return null;
-  order.items = await query<OrderItemRow>('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id', [id]);
+  order.items = await query<OrderItemRow>(
+    `SELECT oi.*, COALESCE(s.status = 'in_transit', false) AS preorder_pending, s.expected_at AS preorder_eta, s.title AS preorder_shipment
+     FROM order_items oi LEFT JOIN shipments s ON s.id = oi.preorder_shipment_id
+     WHERE oi.order_id = $1 ORDER BY oi.id`,
+    [id],
+  );
   return order;
 }
 
@@ -83,6 +93,11 @@ export function publicOrder(o: OrderRow) {
       price: i.price,
       quantity: i.quantity,
       product_id: i.product_id,
+      preorder: i.preorder_pending,
+      preorder_eta: i.preorder_pending ? i.preorder_eta : null,
     })),
   };
 }
+
+/** SQL condition: the order line waits for an open shipment, so it holds no stock. */
+export const PENDING_PREORDER_SQL = `EXISTS (SELECT 1 FROM shipments s WHERE s.id = oi.preorder_shipment_id AND s.status = 'in_transit')`;

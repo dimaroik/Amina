@@ -36,6 +36,9 @@ export interface ProductCard {
   colors: ColorOption[];
   sizes: string[];
   in_stock: boolean;
+  /** sold out, but can be pre-ordered from a shipment on the way */
+  preorder?: boolean;
+  preorder_eta?: string | null;
 }
 
 export interface ProductVariant {
@@ -46,6 +49,9 @@ export interface ProductVariant {
   sku: string;
   stock: number;
   price: number | null;
+  /** units free for pre-order (only when out of stock) */
+  preorder?: number;
+  preorder_eta?: string | null;
 }
 
 export interface ProductImage {
@@ -184,6 +190,8 @@ export interface CartItem {
   oldPrice: number | null;
   quantity: number;
   stock: number;
+  preorder?: boolean;
+  eta?: string | null;
 }
 
 export type DeliveryType = 'np_warehouse' | 'np_courier' | 'address' | 'pickup';
@@ -244,7 +252,17 @@ export interface PublicOrder {
   telegram_linked: boolean;
   viber_linked: boolean;
   access_token?: string;
-  items: { name: string; size: string; color: string; image_url: string | null; price: number; quantity: number; product_id: number | null }[];
+  items: {
+    name: string;
+    size: string;
+    color: string;
+    image_url: string | null;
+    price: number;
+    quantity: number;
+    product_id: number | null;
+    preorder?: boolean;
+    preorder_eta?: string | null;
+  }[];
 }
 
 export interface OrderResponse {

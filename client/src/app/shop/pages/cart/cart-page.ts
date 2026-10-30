@@ -3,12 +3,13 @@ import { RouterLink } from '@angular/router';
 import { Cart } from '../../../core/cart.service';
 import type { CartItem } from '../../../core/models';
 import { Icon } from '../../../shared/icon';
+import { EtaPipe } from '../../../shared/eta.pipe';
 import { UahPipe } from '../../../shared/uah.pipe';
 
 @Component({
   selector: 'app-cart-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, UahPipe],
+  imports: [RouterLink, Icon, UahPipe, EtaPipe],
   template: `
     <section class="container page">
       <h1 class="h1 title">Кошик @if (cart.count()) { <span class="count-badge" [attr.aria-label]="cart.count() + ' шт.'">{{ cart.count() }}</span> }</h1>
@@ -39,6 +40,7 @@ import { UahPipe } from '../../../shared/uah.pipe';
                 <div class="meta">
                   <a class="name" [routerLink]="['/product', i.slug]">{{ i.name }}</a>
                   <span class="small muted">{{ label(i) }}</span>
+                  @if (i.preorder) { <span class="pre-line">Передзамовлення · {{ i.eta | eta }}</span> }
                   <span class="small">
                     {{ i.price | uah }}
                     @if (i.oldPrice && i.oldPrice > i.price) { <span class="price-old">{{ i.oldPrice | uah }}</span> }

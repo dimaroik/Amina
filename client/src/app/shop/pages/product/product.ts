@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Analytics } from '../../../core/analytics.service';
 import { Cart } from '../../../core/cart.service';
+import { preorderWhen } from '../../../core/labels';
 import type { ProductCard, ProductDetail, ProductVariant } from '../../../core/models';
 import { storage } from '../../../core/storage';
 import { Store } from '../../../core/store.service';
@@ -23,6 +24,12 @@ const SIZE_GUIDE = [
   ['L', '46–48', '92–96', '74–78', '100–104'],
   ['XL', '48–50', '96–100', '78–82', '104–108'],
 ];
+
+/** Units that can be bought now, or pre-ordered when the variant is sold out. */
+function available(v: ProductVariant | null | undefined): number {
+  if (!v) return 0;
+  return v.stock > 0 ? v.stock : (v.preorder ?? 0);
+}
 
 @Component({
   selector: 'app-product',
@@ -107,7 +114,7 @@ const SIZE_GUIDE = [
                 </div>
                 <div class="sizes" [class.shake]="shake()">
                   @for (s of sizes(); track s.size) {
-                    <button class="size" [class.on]="s.size === size()" [class.out]="!s.stock" [disabled]="!s.stock" (click)="size.set(s.size)">{{ s.size }}</button>
+                    <button class="size" [class.on]="s.size === size()" [class.out]="!s.stock && !s.pre" [class.pre]="!s.stock && s.pre > 0" [disabled]="!s.stock && !s.pre" (click)="size.set(s.size)" [attr.title]="!s.stock && s.pre ? 'Передзамовлення' : null">{{ s.size }}</button>
                   }
                 </div>
                 @if (variant(); as v) {
@@ -119,6 +126,13 @@ const SIZE_GUIDE = [
               </div>
             }
 
+            @if (preorderNote(); as note) {
+              <div class="preorder-note">
+                <app-icon name="parcel" [size]="20" />
+                <div><b>Передзамовлення</b><span class="small">{{ note }}</span></div>
+              </div>
+            }
+
             <div class="buy">
               <div class="qty">
                 <button (click)="qty.set(Math.max(1, qty() - 1))" aria-label="Менше"><app-icon name="minus" [size]="16" /></button>
@@ -126,7 +140,7 @@ const SIZE_GUIDE = [
                 <button (click)="qty.set(Math.min(maxQty(), qty() + 1))" aria-label="Більше"><app-icon name="plus" [size]="16" /></button>
               </div>
               @if (inStock()) {
-                <button class="btn add" (click)="addToCart()"><app-icon name="bag" [size]="18" /> Додати в кошик</button>
+                <button class="btn add" (click)="addToCart()"><app-icon [name]="isPreorder() ? 'parcel' : 'bag'" [size]="18" /> {{ isPreorder() ? 'Передзамовити' : 'Додати в кошик' }}</button>
               } @else {
                 <button class="btn add" (click)="alertOpen.set(true)"><app-icon name="bell" [size]="18" /> Повідомити про наявність</button>
               }
@@ -136,7 +150,7 @@ const SIZE_GUIDE = [
             </div>
 
             <ul class="perks small">
-              <li><app-icon name="truck" [size]="18" /> Відправка протягом 1–2 днів</li>
+              <li><app-icon name="truck" [size]="18" /> {{ isPreorder() ? 'Відправимо одразу, щойно товар надійде' : 'Відправка протягом 1–2 днів' }}</li>
               <li><app-icon name="refresh" [size]="18" /> Обмін і повернення 14 днів</li>
               <li><app-icon name="qr" [size]="18" /> Оплата Monobank QR, карткою або при отриманні</li>
             </ul>
@@ -178,7 +192,7 @@ const SIZE_GUIDE = [
       <!-- sticky mobile bar -->
       <div class="sticky-bar">
         <div><div class="small">{{ prod.name }}</div><b>{{ price() | uah }}</b>@if (size()) { <span class="muted small"> · {{ size() }}</span> }</div>
-        <button class="btn btn-sm" (click)="addToCart()" [disabled]="!inStock()">В кошик</button>
+        <button class="btn btn-sm" (click)="addToCart()" [disabled]="!inStock()">{{ isPreorder() ? 'Передзамовити' : 'В кошик' }}</button>
       </div>
 
       @if (lightbox()) {
@@ -248,12 +262,13 @@ export class ProductPage {
     return [...seen].map(([name, hex]) => ({ name, hex }));
   });
   protected sizes = computed(() => {
-    const out = new Map<string, number>();
+    const out = new Map<string, { stock: number; pre: number }>();
     for (const v of this.p()?.variants ?? []) {
       if (!v.size || (this.color() && v.color !== this.color())) continue;
-      out.set(v.size, (out.get(v.size) ?? 0) + v.stock);
+      const cur = out.get(v.size) ?? { stock: 0, pre: 0 };
+      out.set(v.size, { stock: cur.stock + v.stock, pre: cur.pre + (v.preorder ?? 0) });
     }
-    return [...out].map(([size, stock]) => ({ size, stock }));
+    return [...out].map(([size, a]) => ({ size, ...a }));
   });
   protected variant = computed<ProductVariant | null>(() => {
     const vs = this.p()?.variants ?? [];
@@ -277,9 +292,29 @@ export class ProductPage {
     document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' });
   }
 
-  protected hasMissingSizes = computed(() => this.sizes().some((s) => !s.stock));
-  protected inStock = computed(() => (this.p()?.variants ?? []).some((v) => v.stock > 0));
-  protected maxQty = computed(() => Math.max(1, this.variant()?.stock ?? 1));
+  protected hasMissingSizes = computed(() => this.sizes().some((s) => !s.stock && !s.pre));
+  /** can be bought now or pre-ordered */
+  protected inStock = computed(() => (this.p()?.variants ?? []).some((v) => available(v) > 0));
+  private onlyPreorder = computed(() => {
+    const vs = this.p()?.variants ?? [];
+    return !vs.some((v) => v.stock > 0) && vs.some((v) => (v.preorder ?? 0) > 0);
+  });
+  protected isPreorder = computed(() => {
+    const v = this.variant();
+    return v && (!this.sizes().length || this.size()) ? v.stock <= 0 && (v.preorder ?? 0) > 0 : this.onlyPreorder();
+  });
+  protected preorderNote = computed(() => {
+    const v = this.variant();
+    if (v && v.stock <= 0 && (v.preorder ?? 0) > 0 && (!this.sizes().length || this.size())) {
+      return `${v.size ? `Розмір ${v.size} уже в дорозі` : 'Товар уже в дорозі'}, ${preorderWhen(v.preorder_eta)}. Оформіть замовлення зараз — відправимо одразу після надходження.`;
+    }
+    if (this.onlyPreorder()) {
+      const eta = (this.p()?.variants ?? []).map((x) => x.preorder_eta).filter(Boolean).sort()[0];
+      return `Нова партія вже в дорозі, ${preorderWhen(eta)}. Можна замовити наперед.`;
+    }
+    return null;
+  });
+  protected maxQty = computed(() => Math.max(1, available(this.variant())));
   protected wished = computed(() => {
     const p = this.p();
     return p ? this.wishlist.has(p.id) : false;
@@ -338,11 +373,11 @@ export class ProductPage {
     this.active.set(0);
     this.qty.set(1);
     this.openSection.set(0);
-    const firstInStock = p.variants.find((v) => v.stock > 0) ?? p.variants[0];
+    const firstInStock = p.variants.find((v) => v.stock > 0) ?? p.variants.find((v) => available(v) > 0) ?? p.variants[0];
     this.color.set(firstInStock?.color ?? '');
     this.size.set('');
     const onlyOne = p.variants.filter((v) => v.color === this.color());
-    if (onlyOne.length === 1 && onlyOne[0].stock > 0) this.size.set(onlyOne[0].size);
+    if (onlyOne.length === 1 && available(onlyOne[0]) > 0) this.size.set(onlyOne[0].size);
     this.trackRecent(p);
   }
 
@@ -363,6 +398,7 @@ export class ProductPage {
       colors: this.colors(),
       sizes: [...new Set(p.variants.map((v) => v.size).filter(Boolean))],
       in_stock: p.variants.some((v) => v.stock > 0),
+      preorder: !p.variants.some((v) => v.stock > 0) && p.variants.some((v) => (v.preorder ?? 0) > 0),
     };
     storage.set('amina.recent', [card, ...list].slice(0, 10));
   }
@@ -370,7 +406,7 @@ export class ProductPage {
   selectColor(name: string) {
     this.color.set(name);
     this.active.set(0);
-    if (this.size() && !this.sizes().find((s) => s.size === this.size() && s.stock > 0)) this.size.set('');
+    if (this.size() && !this.sizes().find((s) => s.size === this.size() && (s.stock > 0 || s.pre > 0))) this.size.set('');
   }
 
   step(d: number) {
@@ -403,10 +439,11 @@ export class ProductPage {
       return;
     }
     const v = this.variant();
-    if (!v || v.stock <= 0) {
+    if (!v || available(v) <= 0) {
       this.toasts.error('Цього варіанту немає в наявності');
       return;
     }
+    const preorder = v.stock <= 0;
     this.cart.add(
       {
         variantId: v.id,
@@ -418,7 +455,9 @@ export class ProductPage {
         color: v.color,
         price: v.price ?? p.price,
         oldPrice: p.old_price,
-        stock: v.stock,
+        stock: available(v),
+        preorder,
+        eta: preorder ? (v.preorder_eta ?? null) : null,
       },
       this.qty(),
     );
@@ -430,7 +469,8 @@ export class ProductPage {
     const card: ProductCard = {
       id: p.id, name: p.name, slug: p.slug, price: p.price, old_price: p.old_price, is_new: p.is_new, is_featured: p.is_featured,
       category_slug: p.category_slug, category_name: p.category_name, images: p.images.slice(0, 2).map((i) => i.url),
-      colors: this.colors(), sizes: [...new Set(p.variants.map((v) => v.size).filter(Boolean))], in_stock: this.inStock(),
+      colors: this.colors(), sizes: [...new Set(p.variants.map((v) => v.size).filter(Boolean))],
+      in_stock: p.variants.some((v) => v.stock > 0), preorder: this.onlyPreorder(),
     };
     this.toasts.show(this.wishlist.toggle(card) ? 'Додано в обране' : 'Прибрано з обраного');
   }

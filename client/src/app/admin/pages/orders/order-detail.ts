@@ -7,6 +7,7 @@ import { ORDER_PROGRESS, ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_STATUSES, 
 import type { OrderStatus, PaymentStatus } from '../../../core/models';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
+import { EtaPipe } from '../../../shared/eta.pipe';
 import { UahPipe } from '../../../shared/uah.pipe';
 import { AdminApi, phoneDigits, type AdminOrder, type VariantSearchRow } from '../../admin-api';
 import { TtnDialog } from './ttn-dialog';
@@ -24,12 +25,12 @@ interface EditItem {
 }
 
 const CHANNEL_LABELS: Record<string, string> = { phone: 'Дзвінок', telegram: 'Telegram', viber: 'Viber', whatsapp: 'WhatsApp', email: 'Email' };
-const HISTORY_ICONS: Record<string, string> = { created: 'sparkle', status: 'refresh', payment: 'card', tracking: 'truck', items: 'box', message: 'chat', edit: 'edit', telegram_linked: 'telegram', viber_linked: 'viber', payment_error: 'info' };
+const HISTORY_ICONS: Record<string, string> = { created: 'sparkle', status: 'refresh', payment: 'card', tracking: 'truck', items: 'box', message: 'chat', edit: 'edit', telegram_linked: 'telegram', viber_linked: 'viber', payment_error: 'info', preorder: 'parcel' };
 
 @Component({
   selector: 'app-admin-order-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, UahPipe, DatePipe, TtnDialog],
+  imports: [FormsModule, RouterLink, Icon, UahPipe, EtaPipe, DatePipe, TtnDialog],
   templateUrl: './order-detail.html',
   styleUrl: './order-detail.scss',
 })
