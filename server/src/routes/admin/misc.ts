@@ -233,6 +233,20 @@ adminMiscRouter.put('/settings', async (req, res) => {
         })
         .partial()
         .optional(),
+      novaPoshta: z
+        .object({
+          senderCityRef: z.string().trim().max(60),
+          senderCityName: z.string().trim().max(200),
+          senderWarehouseRef: z.string().trim().max(60),
+          senderWarehouseName: z.string().trim().max(300),
+          senderPhone: z.string().trim().max(20),
+          defaultWeight: z.number().min(0.1).max(30),
+          defaultDescription: z.string().trim().min(1).max(100),
+          payer: z.enum(['Recipient', 'Sender']),
+          autoTrack: z.boolean(),
+        })
+        .partial()
+        .optional(),
     })
     .parse(req.body);
   res.json(await updateSettings(body as any));

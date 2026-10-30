@@ -5,6 +5,10 @@ import { ORDER_STATUSES, PAYMENT_STATUSES, orderStatusLabel, paymentStatusLabel 
 import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js';
 import { addHistory, getOrderFull } from '../../services/orders.js';
 import { processStockAlerts } from '../../services/stock-alerts.js';
+import { syncTracking } from '../../services/np-tracking.js';
+import { createRecipient, createWaybill, deleteWaybill, getSender, NovaPoshtaError, waybillPdf } from '../../services/novaposhta.js';
+import { getSettings } from '../../services/settings.js';
+import { HttpError } from '../../utils/errors.js';
 import { badRequest, notFound } from '../../utils/errors.js';
 
 export const adminOrdersRouter = Router();
@@ -258,4 +262,116 @@ adminOrdersRouter.delete('/orders/:id', async (req, res) => {
   });
   fireAndForget(processStockAlerts());
   res.json({ ok: true });
+});
+
+// ---------- Nova Poshta waybills ----------
+
+function npError(err: unknown): never {
+  if (err instanceof NovaPoshtaError) throw new HttpError(502, err.message);
+  throw err;
+}
+
+adminOrdersRouter.get('/np/sender', async (_req, res) => {
+  try {
+    res.json(await getSender());
+  } catch (err) {
+    npError(err);
+  }
+});
+
+adminOrdersRouter.post('/np/sync', async (_req, res) => {
+  try {
+    res.json(await syncTracking());
+  } catch (err) {
+    npError(err);
+  }
+});
+
+const ttnSchema = z.object({
+  firstName: z.string().trim().min(1).max(60),
+  lastName: z.string().trim().min(1).max(60),
+  phone: z.string().trim().min(9).max(20),
+  cityRef: z.string().trim().min(10).max(60),
+  cityName: z.string().trim().max(200).default(''),
+  warehouseRef: z.string().trim().min(10).max(60),
+  warehouseName: z.string().trim().max(300).default(''),
+  weight: z.number().min(0.1).max(30),
+  declaredValue: z.number().min(1),
+  description: z.string().trim().min(1).max(100),
+  payer: z.enum(['Recipient', 'Sender']),
+  codAmount: z.number().min(0).default(0),
+  markShipped: z.boolean().default(false),
+});
+
+adminOrdersRouter.post('/orders/:id/ttn', async (req, res) => {
+  const id = Number(req.params.id);
+  const body = ttnSchema.parse(req.body);
+  const order = await one('SELECT * FROM orders WHERE id = $1', [id]);
+  if (!order) throw notFound('Замовлення не знайдено');
+  if (order.np_ttn_ref) throw badRequest('Для цього замовлення ТТН уже створено');
+  const s = (await getSettings()).novaPoshta;
+  if (!s.senderCityRef || !s.senderWarehouseRef || !s.senderPhone) {
+    throw badRequest('Спершу вкажіть відділення відправки й телефон у Налаштування → Нова пошта');
+  }
+  let doc;
+  try {
+    const sender = await getSender();
+    const recipient = await createRecipient(body.firstName, body.lastName, body.phone);
+    doc = await createWaybill({
+      sender: { ref: sender.ref, contactRef: sender.contactRef, cityRef: s.senderCityRef, warehouseRef: s.senderWarehouseRef, phone: s.senderPhone },
+      recipient: { ref: recipient.ref, contactRef: recipient.contactRef, cityRef: body.cityRef, warehouseRef: body.warehouseRef, phone: body.phone },
+      weight: body.weight,
+      declaredValue: body.declaredValue,
+      description: body.description,
+      payer: body.payer,
+      codAmount: body.codAmount,
+    });
+  } catch (err) {
+    npError(err);
+  }
+  const author = req.user!.name || req.user!.email;
+  await query(
+    `UPDATE orders SET tracking_number = $2, np_ttn_ref = $3, np_status = 'Створено', np_status_code = '1', np_status_at = now(),
+       delivery_city_ref = $4, delivery_branch_ref = $5,
+       delivery_city = CASE WHEN $6 <> '' THEN $6 ELSE delivery_city END,
+       delivery_branch = CASE WHEN $7 <> '' THEN $7 ELSE delivery_branch END,
+       updated_at = now()
+     WHERE id = $1`,
+    [id, doc.IntDocNumber, doc.Ref, body.cityRef, body.warehouseRef, body.cityName, body.warehouseName],
+  );
+  await addHistory(id, 'tracking', `Створено ТТН ${doc.IntDocNumber}${doc.CostOnSite ? ` · доставка ≈ ${doc.CostOnSite} ₴` : ''}`, author);
+  if (body.markShipped && order.status !== 'shipped') {
+    await query("UPDATE orders SET status = 'shipped', updated_at = now() WHERE id = $1", [id]);
+    await addHistory(id, 'status', `${order.status === 'new' ? 'Нове' : 'Статус'} → Відправлене`, author);
+    fireAndForget(notifyOrderStatus(id, { statusChanged: true }));
+  }
+  res.status(201).json({ number: doc.IntDocNumber, cost: doc.CostOnSite, estimatedDelivery: doc.EstimatedDeliveryDate, order: await getOrderFull(id) });
+});
+
+adminOrdersRouter.delete('/orders/:id/ttn', async (req, res) => {
+  const id = Number(req.params.id);
+  const order = await one('SELECT np_ttn_ref, tracking_number FROM orders WHERE id = $1', [id]);
+  if (!order?.np_ttn_ref) throw badRequest('ТТН не створювалась з адмінки');
+  try {
+    await deleteWaybill(order.np_ttn_ref);
+  } catch (err) {
+    npError(err);
+  }
+  await query("UPDATE orders SET tracking_number = '', np_ttn_ref = NULL, np_status = '', np_status_code = '', updated_at = now() WHERE id = $1", [id]);
+  await addHistory(id, 'tracking', `ТТН ${order.tracking_number} видалено`, req.user!.name || req.user!.email);
+  res.json(await getOrderFull(id));
+});
+
+adminOrdersRouter.get('/orders/:id/ttn.pdf', async (req, res) => {
+  const order = await one('SELECT tracking_number FROM orders WHERE id = $1', [Number(req.params.id)]);
+  if (!order?.tracking_number) throw notFound('ТТН немає');
+  const kind = req.query.kind === 'marking' ? 'marking' : 'document';
+  try {
+    const pdf = await waybillPdf(order.tracking_number, kind);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="ttn-${order.tracking_number}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    npError(err);
+  }
 });

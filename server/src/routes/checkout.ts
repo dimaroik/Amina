@@ -86,9 +86,10 @@ const orderSchema = z.object({
       city: z.string().trim().max(200).default(''),
       cityRef: z.string().trim().max(100).default(''),
       branch: z.string().trim().max(300).default(''),
+      branchRef: z.string().trim().max(60).default(''),
       address: z.string().trim().max(300).default(''),
     })
-    .default({ city: '', cityRef: '', branch: '', address: '' }),
+    .default({ city: '', cityRef: '', branch: '', branchRef: '', address: '' }),
   paymentMethod: z.enum(['cod', 'mono_jar', 'iban', 'mono_acquiring']),
   promoCode: z.string().trim().max(40).optional(),
   comment: z.string().trim().max(1000).default(''),
@@ -148,13 +149,14 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
     const { rows: [order] } = await client.query(
       `INSERT INTO orders (number, access_token, user_id, payment_status, customer_name, customer_phone, customer_email, contact_channel,
          delivery_method_id, delivery_name, delivery_type, delivery_city, delivery_city_ref, delivery_branch, delivery_address, delivery_cost,
-         payment_method, payment_name, subtotal, discount, total, promo_code, comment)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
+         payment_method, payment_name, subtotal, discount, total, promo_code, comment, delivery_branch_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
       [
         number, accessToken, req.user?.id ?? null, initialPaymentStatus,
         body.customer.name, body.customer.phone, body.customer.email, body.customer.contactChannel,
         delivery.id, delivery.name, delivery.type, body.delivery.city, body.delivery.cityRef, body.delivery.branch, body.delivery.address, deliveryCost,
         payment.code, payment.name, subtotal, discount, total, promo?.code ?? null, body.comment,
+        delivery.type === 'np_warehouse' ? body.delivery.branchRef : '',
       ],
     );
     for (const v of variants) {

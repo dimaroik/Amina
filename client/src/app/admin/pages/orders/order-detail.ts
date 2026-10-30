@@ -9,6 +9,7 @@ import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
 import { UahPipe } from '../../../shared/uah.pipe';
 import { AdminApi, phoneDigits, type AdminOrder, type VariantSearchRow } from '../../admin-api';
+import { TtnDialog } from './ttn-dialog';
 import { Confirm } from '../../ui/confirm';
 
 interface EditItem {
@@ -28,7 +29,7 @@ const HISTORY_ICONS: Record<string, string> = { created: 'sparkle', status: 'ref
 @Component({
   selector: 'app-admin-order-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, UahPipe, DatePipe],
+  imports: [FormsModule, RouterLink, Icon, UahPipe, DatePipe, TtnDialog],
   templateUrl: './order-detail.html',
   styleUrl: './order-detail.scss',
 })
@@ -49,6 +50,7 @@ export class OrderDetailPage {
 
   protected order = signal<AdminOrder | null>(null);
   protected busy = signal(false);
+  protected ttnOpen = signal(false);
   protected notify = signal(true);
   protected statusNote = '';
 
@@ -239,6 +241,32 @@ export class OrderDetailPage {
         this.toasts.success(`Замовлення ${o.number} видалено`);
         this.api.refreshBadges();
         this.router.navigateByUrl('/admin/orders');
+      },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  ttnCreated(o: AdminOrder) {
+    this.ttnOpen.set(false);
+    this.apply(o);
+    this.load();
+  }
+
+  async openTtn(kind: 'document' | 'marking') {
+    try {
+      await this.api.openPdf(`/orders/${this.id()}/ttn.pdf`, { kind });
+    } catch (e) {
+      this.toasts.error(errorMessage(e, 'Не вдалося отримати PDF від Нової пошти'));
+    }
+  }
+
+  async deleteTtn() {
+    if (!(await this.confirm.ask('Видалити ТТН у Новій пошті? Це можливо, поки посилку не прийняли у відділенні.', { danger: true, confirmLabel: 'Видалити ТТН' }))) return;
+    this.api.delete<AdminOrder>(`/orders/${this.id()}/ttn`).subscribe({
+      next: (o) => {
+        this.apply(o);
+        this.load();
+        this.toasts.success('ТТН видалено');
       },
       error: (e) => this.toasts.error(errorMessage(e)),
     });

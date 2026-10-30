@@ -243,7 +243,23 @@
                 </div>
               </label>
               <button class="btn btn-sm btn-outline" (click)="saveDelivery()" [disabled]="busy()">Зберегти доставку</button>
-              <p class="adm-hint">Порада: додайте ТТН і переведіть у «Відправлене» — клієнт отримає номер для відстеження.</p>
+              @if (o.np_ttn_ref) {
+                <div class="ttn">
+                  <div class="adm-between"><span class="small"><b>ТТН {{ o.tracking_number }}</b></span>
+                    @if (o.np_status) { <span class="adm-pill">{{ o.np_status }}</span> }</div>
+                  @if (o.np_status_at) { <span class="tiny adm-muted">Оновлено {{ o.np_status_at | date: 'd MMM, HH:mm' }}</span> }
+                  <div class="adm-row" style="gap:6px">
+                    <button class="btn btn-ghost btn-xs" (click)="openTtn('marking')">Наліпка 100×100</button>
+                    <button class="btn btn-ghost btn-xs" (click)="openTtn('document')">Друк ТТН</button>
+                    @if (o.np_status_code === '1') { <button class="btn btn-ghost btn-xs del" (click)="deleteTtn()">Видалити</button> }
+                  </div>
+                </div>
+              } @else if (o.delivery_type === 'np_warehouse') {
+                <button class="btn btn-sm" (click)="ttnOpen.set(true)"><app-icon name="truck" [size]="14" /> Створити ТТН</button>
+                <p class="adm-hint">ТТН створиться в кабінеті Нової пошти, номер підставиться сюди, а клієнт отримає його в повідомленні.</p>
+              } @else {
+                <p class="adm-hint">Порада: додайте ТТН і переведіть у «Відправлене» — клієнт отримає номер для відстеження.</p>
+              }
             </div>
           </section>
 
@@ -291,4 +307,8 @@
   </div>
 } @else {
   <div class="adm-page"><div class="skeleton" style="height:420px;border-radius:10px"></div></div>
+}
+
+@if (ttnOpen() && order(); as o) {
+  <adm-ttn-dialog [order]="o" (close)="ttnOpen.set(false)" (created)="ttnCreated($event)" />
 }

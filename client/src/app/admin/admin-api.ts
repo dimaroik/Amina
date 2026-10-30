@@ -65,6 +65,12 @@ export interface AdminOrder {
   tracking_number: string;
   telegram_chat_id: string | null;
   viber_user_id: string | null;
+  delivery_city_ref: string;
+  delivery_branch_ref: string;
+  np_ttn_ref: string | null;
+  np_status: string;
+  np_status_code: string;
+  np_status_at: string | null;
   created_at: string;
   updated_at: string;
   items: AdminOrderItem[];
@@ -192,6 +198,17 @@ export interface AdminSettings {
       notifyAdminOnChatHandoff: boolean;
     };
     chatbot: { enabled: boolean; botName: string; greeting: string; instructions: string };
+    novaPoshta: {
+      senderCityRef: string;
+      senderCityName: string;
+      senderWarehouseRef: string;
+      senderWarehouseName: string;
+      senderPhone: string;
+      defaultWeight: number;
+      defaultDescription: string;
+      payer: 'Recipient' | 'Sender';
+      autoTrack: boolean;
+    };
     analytics: { ga4Id: string; metaPixelId: string };
   };
   integrations: {
@@ -252,6 +269,21 @@ export class AdminApi {
       next: (r) => this.waitingChats.set(r.filter((c) => c.needs_human).length),
       error: () => {},
     });
+  }
+
+  /** Opens an authenticated PDF in a new tab (a plain link would carry no token). */
+  async openPdf(path: string, params: Record<string, string | number | undefined> = {}) {
+    const win = window.open('', '_blank');
+    try {
+      const blob = await firstValueFrom(this.http.get(this.api.url(`/admin${path}`, params), { responseType: 'blob' }));
+      const url = URL.createObjectURL(blob);
+      if (win) win.location.href = url;
+      else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      win?.close();
+      throw err;
+    }
   }
 
   /** Downloads an authenticated file (the interceptor adds the token). */

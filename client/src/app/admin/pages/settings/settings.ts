@@ -5,8 +5,9 @@ import { errorMessage } from '../../../core/api.service';
 import { Toasts } from '../../../core/toast.service';
 import { Icon } from '../../../shared/icon';
 import { AdminApi, type AdminSettings } from '../../admin-api';
+import { NpPicker } from '../../ui/np-picker';
 
-type Tab = 'store' | 'payment' | 'notifications' | 'chatbot' | 'analytics' | 'integrations';
+type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
 
 const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean; area?: boolean }[] = [
@@ -29,7 +30,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
 @Component({
   selector: 'app-admin-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, NpPicker],
   template: `
     <div class="adm-page">
       <div class="adm-page-head"><div><h1>Налаштування</h1><div class="sub">Інформація про магазин, оплата, сповіщення й чат-бот</div></div></div>
@@ -79,6 +80,34 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 } @else {
                   <div class="adm-empty">Вставте посилання на банку, щоб побачити QR</div>
                 }
+              </div>
+            </div>
+          }
+          @case ('np') {
+            <div class="adm-grid adm-grid-2">
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Звідки відправляєте</div>
+                @if (!i()?.novaPoshta) {
+                  <p class="adm-hint" style="margin:0;color:var(--warning)">Додайте NOVA_POSHTA_API_KEY на Render, щоб працювали пошук і створення ТТН.</p>
+                }
+                <div class="field"><label class="label">Місто відправки</label>
+                  <adm-np-picker kind="city" [(name)]="s.novaPoshta.senderCityName" [(ref)]="s.novaPoshta.senderCityRef" (refChange)="s.novaPoshta.senderWarehouseRef = ''; s.novaPoshta.senderWarehouseName = ''" /></div>
+                <div class="field"><label class="label">Відділення відправки</label>
+                  <adm-np-picker kind="warehouse" [cityRef]="s.novaPoshta.senderCityRef" [(name)]="s.novaPoshta.senderWarehouseName" [(ref)]="s.novaPoshta.senderWarehouseRef" /></div>
+                <div class="field"><label class="label">Телефон відправника</label><input class="input" [(ngModel)]="s.novaPoshta.senderPhone" placeholder="+380…" />
+                  <div class="adm-hint">Той самий номер, що в кабінеті Нової пошти.</div></div>
+                <div><button class="btn btn-ghost btn-xs" (click)="checkNp()"><app-icon name="check" [size]="13" /> Перевірити підключення до кабінету НП</button></div>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Значення за замовчуванням для ТТН</div>
+                <div class="form-grid">
+                  <div class="field"><label class="label">Вага посилки, кг</label><input class="input" type="number" min="0.1" step="0.1" [(ngModel)]="s.novaPoshta.defaultWeight" /></div>
+                  <div class="field"><label class="label">Опис вантажу</label><input class="input" [(ngModel)]="s.novaPoshta.defaultDescription" /></div>
+                  <div class="field full"><label class="label">Доставку оплачує</label>
+                    <select class="select" [(ngModel)]="s.novaPoshta.payer"><option value="Recipient">Отримувач</option><option value="Sender">Відправник (магазин)</option></select></div>
+                </div>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.novaPoshta.autoTrack" /><span class="track"></span> Автоматично оновлювати статуси замовлень за трекінгом</label>
+                <p class="adm-hint" style="margin:0">Кожні 30 хв (поки сайт активний): посилка в дорозі → «Відправлене», отримана → «Доставлене»; коли прибула у відділення — клієнт отримує повідомлення.</p>
               </div>
             </div>
           }
@@ -189,6 +218,7 @@ export class SettingsPage {
   protected tabs: { v: Tab; l: string }[] = [
     { v: 'store', l: 'Магазин' },
     { v: 'payment', l: 'Оплата' },
+    { v: 'np', l: 'Нова пошта' },
     { v: 'notifications', l: 'Сповіщення' },
     { v: 'chatbot', l: 'Чат-бот' },
     { v: 'analytics', l: 'Аналітика' },
@@ -286,6 +316,13 @@ export class SettingsPage {
         if (failed.length) this.toasts.error(`Не вдалося: ${failed.map((f) => `${f.to} — ${f.error}`).join('; ')}`);
         else this.toasts.success(`Тест надіслано: ${r.map((x) => x.to).join(', ')}`);
       },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  checkNp() {
+    this.api.get<{ name: string }>('/np/sender').subscribe({
+      next: (r) => this.toasts.success(`Підключено. Відправник: ${r.name}`),
       error: (e) => this.toasts.error(errorMessage(e)),
     });
   }

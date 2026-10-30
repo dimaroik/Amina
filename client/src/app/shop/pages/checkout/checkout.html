@@ -71,7 +71,7 @@
               <div class="form-grid addr">
                 <div class="field ac" [class.full]="d.type !== 'np_warehouse'">
                   <label class="label" for="city">Місто *</label>
-                  <input id="city" class="input" name="city" autocomplete="off" [class.invalid]="submitted() && errors()['city']" [ngModel]="city()" (ngModelChange)="onCity($event)" (blur)="closeLists()" placeholder="Почніть вводити назву" />
+                  <input id="city" class="input" name="city" autocomplete="off" [class.invalid]="submitted() && errors()['city']" [ngModel]="city()" (ngModelChange)="onCity($event)" (blur)="closeLists('city')" placeholder="Почніть вводити назву" />
                   @if (cityOpen() && cities().length) {
                     <ul class="ac-list">
                       @for (c of cities(); track c.ref) { <li (mousedown)="pickCity(c)"><b>{{ c.name }}</b> <span class="muted small">{{ c.area }} обл.</span></li> }
@@ -82,7 +82,7 @@
                 @if (d.type === 'np_warehouse') {
                   <div class="field ac">
                     <label class="label" for="branch">Відділення / поштомат *</label>
-                    <input id="branch" class="input" name="branch" autocomplete="off" [class.invalid]="submitted() && errors()['branch']" [ngModel]="branch()" (ngModelChange)="onBranch($event)" (focus)="openWarehouses()" (blur)="closeLists()" [placeholder]="np() ? (cityRef() ? 'Номер або адреса' : 'Спершу оберіть місто') : 'Напр.: Відділення №12'" />
+                    <input id="branch" class="input" name="branch" autocomplete="off" [class.invalid]="submitted() && errors()['branch']" [ngModel]="branch()" (ngModelChange)="onBranch($event)" (focus)="openWarehouses()" (blur)="closeLists('wh')" [placeholder]="np() ? (cityRef() ? 'Номер або адреса' : 'Спершу оберіть місто') : 'Напр.: Відділення №12'" />
                     @if (whOpen() && warehouses().length) {
                       <ul class="ac-list">
                         @for (w of warehouses(); track w.ref) { <li (mousedown)="pickWarehouse(w)">{{ w.name }}</li> }
