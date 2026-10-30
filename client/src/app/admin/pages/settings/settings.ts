@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import QRCode from 'qrcode';
 import { errorMessage } from '../../../core/api.service';
 import { Toasts } from '../../../core/toast.service';
@@ -9,12 +9,18 @@ import { Icon } from '../../../shared/icon';
 import { AdminApi, type AdminSettings } from '../../admin-api';
 import { NpPicker } from '../../ui/np-picker';
 
+interface SocialStatus {
+  instagram: { configured: boolean; connected: { username: string; expiresAt: string } | null; redirectUri: string };
+  facebook: { configured: boolean; connected: { pageName: string; pageId: string } | null; pending: { id: string; name: string }[]; redirectUri: string };
+  https: boolean;
+}
+
 interface ChannelQueue {
-  pending: { id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null }[];
+  pending: { id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null; target: string }[];
   digest: { products: { id: number; name: string }[]; last: { date: string; count: number } | null };
 }
 
-type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'chatbot' | 'analytics' | 'integrations';
+type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'social' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
 
 const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean; area?: boolean }[] = [
@@ -195,7 +201,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                     @for (p of queue()!.pending; track p.id) {
                       <li>
                         <span class="when">{{ p.run_at | date: 'EEE d MMM, HH:mm' }}</span>
-                        <span class="grow"><a class="link-plain" [routerLink]="['/admin/products', p.product_id]">{{ p.name }}</a> <span class="adm-muted">· {{ kindLabels[p.kind] || p.kind }}@if (p.source === 'manual') { · вручну }</span>
+                        <span class="grow"><a class="link-plain" [routerLink]="['/admin/products', p.product_id]">{{ p.name }}</a> <span class="adm-muted">· {{ targetLabels[p.target] || p.target }} · {{ kindLabels[p.kind] || p.kind }}@if (p.source === 'manual') { · вручну }</span>
                           @if (p.error) { <span class="adm-hint" style="color:var(--danger);display:block">Повторимо: {{ p.error }}</span> }</span>
                         <button class="icon-btn" title="Скасувати" (click)="cancelPost(p.id)"><app-icon name="close" [size]="15" /></button>
                       </li>
@@ -205,6 +211,71 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   <p class="adm-hint" style="margin:0">Немає — усе опубліковано.</p>
                 }
                 <p class="adm-hint" style="margin:0">На безкоштовному тарифі Render сайт «засинає», якщо його ніхто не відкриває 15 хв. Тоді пост вийде, щойно хтось зайде на сайт. Щоб публікації виходили вчасно, можна налаштувати безкоштовний пінг (напр. cron-job.org кожні 10 хв на адресу сайту).</p>
+              </div>
+            </div>
+          }
+          @case ('social') {
+            <div class="adm-grid adm-grid-2">
+              @for (net of nets; track net.key) {
+                <div class="adm-card pad adm-stack" style="gap:12px">
+                  <div class="adm-between"><div class="adm-section-title" style="margin:0">{{ net.title }}</div>
+                    @if (connected(net.key); as c) { <span class="adm-pill ok">Підключено</span> } @else { <span class="adm-pill">Не підключено</span> }</div>
+                  @if (social(); as so) {
+                    @if (net.key === 'instagram') {
+                      @if (so.instagram.connected; as c) {
+                        <p class="small" style="margin:0">Акаунт <b>{{ '@' + c.username }}</b>. Доступ оновлюється автоматично (до {{ c.expiresAt | date: 'd MMM y' }}).</p>
+                      }
+                    } @else {
+                      @if (so.facebook.connected; as c) { <p class="small" style="margin:0">Сторінка <b>{{ c.pageName }}</b></p> }
+                      @if (so.facebook.pending.length) {
+                        <div class="field"><label class="label">Оберіть сторінку для публікацій</label>
+                          <div class="adm-row">@for (p of so.facebook.pending; track p.id) { <button class="btn btn-ghost btn-xs" (click)="choosePage(p.id)">{{ p.name }}</button> }</div></div>
+                      }
+                    }
+                    <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social[net.key]" /><span class="track"></span> Автопостинг (ті самі події й час, що в Telegram)</label>
+                    <div class="adm-row">
+                      <button class="btn btn-sm" [disabled]="!so[net.key].configured || !so.https" (click)="connect(net.key)">{{ connected(net.key) ? 'Перепідключити' : 'Підключити ' + net.title }}</button>
+                      @if (connected(net.key)) { <button class="btn btn-ghost btn-xs" (click)="disconnect(net.key)">Відключити</button> }
+                    </div>
+                    @if (!so.https) { <p class="adm-hint" style="margin:0;color:var(--warning)">Працює лише на опублікованому сайті з https.</p> }
+                    @if (!so[net.key].configured) {
+                      <p class="adm-hint" style="margin:0;color:var(--warning)">Спершу створіть застосунок Meta й додайте ключі на Render — інструкція нижче.</p>
+                    }
+                    <details class="guide" [open]="!so[net.key].configured">
+                      <summary>Як підключити (один раз, ~15 хв)</summary>
+                      @if (net.key === 'instagram') {
+                        <ol class="steps small">
+                          <li>В Instagram: Налаштування → Тип акаунта → <b>професійний</b> (Business або «Автор»).</li>
+                          <li>Відкрийте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → «Створити застосунок» (тип Business; сценарій — керування контентом в Instagram).</li>
+                          <li>У застосунку: продукт <b>Instagram</b> → «API setup with Instagram login».</li>
+                          <li>У «Business login settings» → OAuth redirect URI вставте:<br><code class="copy" (click)="copy(so.instagram.redirectUri)">{{ so.instagram.redirectUri }}</code></li>
+                          <li>«App roles» → додайте свій Instagram як <b>Instagram Tester</b> і прийміть запрошення в Instagram (Налаштування → Застосунки й вебсайти).</li>
+                          <li>Скопіюйте <b>Instagram app ID</b> і <b>Instagram app secret</b> → Render → Environment: <code>INSTAGRAM_APP_ID</code>, <code>INSTAGRAM_APP_SECRET</code>.</li>
+                          <li>Після перезапуску натисніть «Підключити Instagram» і дозвольте доступ.</li>
+                        </ol>
+                      } @else {
+                        <ol class="steps small">
+                          <li>Сторінка Facebook магазину, якою ви керуєте (Business Suite → створити сторінку, якщо немає).</li>
+                          <li>У тому самому застосунку Meta додайте продукт <b>Facebook Login for Business</b> (або «Facebook Login»).</li>
+                          <li>Valid OAuth Redirect URIs:<br><code class="copy" (click)="copy(so.facebook.redirectUri)">{{ so.facebook.redirectUri }}</code></li>
+                          <li>App settings → Basic: <b>App ID</b> і <b>App Secret</b> → Render: <code>META_APP_ID</code>, <code>META_APP_SECRET</code>.</li>
+                          <li>Натисніть «Підключити Facebook», увійдіть, оберіть сторінку й дозвольте публікацію.</li>
+                        </ol>
+                      }
+                      <p class="adm-hint" style="margin:0">Назви пунктів у кабінеті Meta іноді змінюються — якщо щось виглядає інакше, надішліть скріншот. Перевірку застосунку (App Review) проходити не треба: ви публікуєте у власні акаунти.</p>
+                    </details>
+                  }
+                </div>
+              }
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Як виглядають пости</div>
+                <ul class="steps small">
+                  <li><b>Instagram:</b> карусель до 4 фото (одне — якщо фото одне), назва, ціна, опис, розміри й «Замовити — посилання в профілі». Посилання в підписах Instagram не клікабельні, тож додайте посилання на сайт у профіль.</li>
+                  <li><b>Facebook:</b> фото або кілька фото, той самий текст і клікабельне посилання на товар.</li>
+                  <li>Фото автоматично готуються під Instagram: 1080×1350 (4:5), JPEG.</li>
+                  <li>«Новинки тижня» виходить у всі підключені мережі одночасно.</li>
+                </ul>
+                <div class="field"><label class="label">Хештеги під постами</label><input class="input" [(ngModel)]="s.social.hashtags" placeholder="#amina #жіночийодяг" /></div>
               </div>
             </div>
           }
@@ -309,6 +380,9 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
   `,
   styles: `
     .qr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+    .guide summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+    .guide[open] summary { margin-bottom: 8px; }
+    .copy { cursor: copy; word-break: break-all; }
     .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
     .queue li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
     .queue .when { width: 130px; flex: none; color: var(--ink-2); font-variant-numeric: tabular-nums; }
@@ -328,6 +402,7 @@ export class SettingsPage {
     { v: 'np', l: 'Нова пошта' },
     { v: 'notifications', l: 'Сповіщення' },
     { v: 'telegram', l: 'Telegram' },
+    { v: 'social', l: 'Instagram і Facebook' },
     { v: 'chatbot', l: 'Чат-бот' },
     { v: 'analytics', l: 'Аналітика' },
     { v: 'integrations', l: 'Інтеграції' },
@@ -358,6 +433,14 @@ export class SettingsPage {
   });
 
   constructor() {
+    // back from Meta's login page: /admin/settings?tab=social&connected=instagram | error=… | choose=facebook
+    const q = inject(ActivatedRoute).snapshot.queryParamMap;
+    const tab = q.get('tab') as Tab | null;
+    if (tab && this.tabs.some((t) => t.v === tab)) this.tab.set(tab);
+    const done = q.get('connected');
+    if (done) this.toasts.success(`${done === 'instagram' ? 'Instagram' : 'Facebook'} підключено ✓`);
+    if (q.get('choose')) this.toasts.show('Оберіть сторінку Facebook для публікацій');
+    if (q.get('error')) this.toasts.error(`Не вдалося підключити: ${q.get('error')}`);
     this.api.get<AdminSettings>('/settings').subscribe((r) => {
       this.s.set(r.settings);
       this.i.set(r.integrations);
@@ -367,6 +450,7 @@ export class SettingsPage {
     effect(() => {
       if (this.tab() === 'payment') this.renderQr();
       if (this.tab() === 'telegram') this.loadQueue();
+      if (this.tab() === 'social') this.loadSocial();
     });
   }
 
@@ -398,6 +482,7 @@ export class SettingsPage {
     { v: 5, l: 'Пʼятниця' }, { v: 6, l: 'Субота' }, { v: 7, l: 'Неділя' },
   ];
   protected kindLabels: Record<string, string> = { new: 'новинка', restock: 'знову в наявності', sale: 'знижка', preorder: 'передзамовлення', incoming: 'в дорозі', plain: 'без позначки' };
+  protected targetLabels: Record<string, string> = { telegram: 'Telegram', instagram: 'Instagram', facebook: 'Facebook' };
   protected queue = signal<ChannelQueue | null>(null);
   protected digestBusy = signal(false);
   protected digestNames = computed(() => (this.queue()?.digest.products ?? []).slice(0, 4).map((p) => p.name).join(', ') + ((this.queue()?.digest.products.length ?? 0) > 4 ? '…' : ''));
@@ -429,6 +514,56 @@ export class SettingsPage {
         this.toasts.error(errorMessage(e));
       },
     });
+  }
+
+  protected nets: { key: 'instagram' | 'facebook'; title: string }[] = [
+    { key: 'instagram', title: 'Instagram' },
+    { key: 'facebook', title: 'Facebook' },
+  ];
+  protected social = signal<SocialStatus | null>(null);
+
+  loadSocial() {
+    this.api.get<SocialStatus>('/social').subscribe((r) => this.social.set(r));
+  }
+
+  connected(net: 'instagram' | 'facebook') {
+    return this.social()?.[net].connected ?? null;
+  }
+
+  connect(net: 'instagram' | 'facebook') {
+    // unsaved changes would be lost on the round trip through Meta's login page
+    if (this.dirty()) {
+      this.toasts.error('Спершу збережіть зміни');
+      return;
+    }
+    this.api.get<{ url: string }>(`/social/connect/${net}`).subscribe({
+      next: (r) => (location.href = r.url),
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  disconnect(net: 'instagram' | 'facebook') {
+    this.api.delete(`/social/${net}`).subscribe({
+      next: () => {
+        this.toasts.show('Відключено');
+        this.loadSocial();
+      },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  choosePage(pageId: string) {
+    this.api.post('/social/facebook/page', { pageId }).subscribe({
+      next: () => {
+        this.toasts.success('Сторінку Facebook підключено');
+        this.loadSocial();
+      },
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
+  }
+
+  copy(text: string) {
+    navigator.clipboard?.writeText(text).then(() => this.toasts.show('Скопійовано'));
   }
 
   testChannel() {

@@ -9,6 +9,9 @@ import { money } from './labels.js';
 import { escapeHtml as esc, sendTelegram, sendTelegramAlbum, sendTelegramPhoto, telegramEnabled, type TgKeyboard } from './notify/telegram.js';
 import { preorderWhenText } from './orders.js';
 import { getSettings } from './settings.js';
+import { autoNetworks, publishDigestToNetwork, publishToNetwork, type SocialNet } from './social.js';
+
+export type Target = 'telegram' | SocialNet;
 
 export type PostKind = 'new' | 'restock' | 'preorder' | 'incoming' | 'sale' | 'plain';
 
@@ -28,7 +31,7 @@ export async function channelReady(): Promise<boolean> {
 }
 
 /** Photo bytes for an image URL of the store (uploaded, bundled demo asset, or external). */
-async function imageBytes(url: string): Promise<Buffer | null> {
+export async function imageBytes(url: string): Promise<Buffer | null> {
   try {
     const id = url.match(/^\/api\/images\/([0-9a-f-]{36})/i)?.[1];
     if (id) return (await loadImage(id))?.data ?? null;
@@ -79,11 +82,23 @@ const sizeRank = (s: string) => {
   return i >= 0 ? i : 100 + (Number.parseFloat(s) || 0);
 };
 
-/** Caption (Telegram allows 1024 characters under a photo). */
-async function caption(productId: number, kind: PostKind): Promise<{ html: string; slug: string; image: string | null } | null> {
+export interface PostParts {
+  header: string;
+  name: string;
+  price: number;
+  oldPrice: number | null;
+  discount: number;
+  description: string;
+  sizes: string[];
+  colors: string[];
+  composition: string;
+  slug: string;
+}
+
+/** What a post about a product says, independent of the network. */
+export async function postParts(productId: number, kind: PostKind): Promise<PostParts | null> {
   const p = await one(
     `SELECT p.id, p.name, p.slug, p.price, p.old_price, p.description, p.composition,
-       (SELECT url FROM product_images WHERE product_id = p.id ORDER BY sort_order, id LIMIT 1) AS image,
        COALESCE((SELECT array_agg(size ORDER BY ord) FROM (
          SELECT v.size, MIN(v.sort_order) AS ord FROM product_variants v
          LEFT JOIN variant_preorder vp ON vp.variant_id = v.id LEFT JOIN variant_incoming vi ON vi.variant_id = v.id
@@ -98,20 +113,40 @@ async function caption(productId: number, kind: PostKind): Promise<{ html: strin
   const discount = p.old_price && p.old_price > p.price ? Math.round((1 - p.price / p.old_price) * 100) : 0;
   let header = HEADERS[kind];
   if ((kind === 'preorder' || kind === 'incoming') && p.eta) header += ` · ${preorderWhenText(p.eta)}`;
-  const price = `<b>${money(Number(p.price))}</b>${discount ? `  <s>${money(Number(p.old_price))}</s>  −${discount}%` : ''}`;
-  const head = [header ? `<i>${esc(header)}</i>` : '', `<b>${esc(p.name)}</b>`, price].filter(Boolean).join('\n');
-  const sizes = [...(p.sizes as string[])].sort((a, b) => sizeRank(a) - sizeRank(b) || a.localeCompare(b));
+  return {
+    header,
+    name: p.name,
+    price: Number(p.price),
+    oldPrice: discount ? Number(p.old_price) : null,
+    discount,
+    description: String(p.description ?? '').trim(),
+    sizes: [...(p.sizes as string[])].sort((a, b) => sizeRank(a) - sizeRank(b) || a.localeCompare(b)),
+    colors: p.colors as string[],
+    composition: String(p.composition ?? ''),
+    slug: p.slug,
+  };
+}
+
+/** Trims a description to fit next to the rest of the post. */
+export function fitText(text: string, room: number): string {
+  if (text.length <= room) return text;
+  return room > 80 ? `${text.slice(0, room - 1).replace(/\s+\S*$/, '')}…` : '';
+}
+
+/** Caption (Telegram allows 1024 characters under a photo). */
+async function caption(productId: number, kind: PostKind): Promise<{ html: string; slug: string } | null> {
+  const d = await postParts(productId, kind);
+  if (!d) return null;
+  const price = `<b>${money(d.price)}</b>${d.discount ? `  <s>${money(d.oldPrice!)}</s>  −${d.discount}%` : ''}`;
+  const head = [d.header ? `<i>${esc(d.header)}</i>` : '', `<b>${esc(d.name)}</b>`, price].filter(Boolean).join('\n');
   const facts = [
-    sizes.length ? `Розміри: ${esc(sizes.join(' · '))}` : '',
-    p.colors.length ? `Кольори: ${esc(p.colors.join(', '))}` : '',
-    p.composition ? `Склад: ${esc(p.composition)}` : '',
+    d.sizes.length ? `Розміри: ${esc(d.sizes.join(' · '))}` : '',
+    d.colors.length ? `Кольори: ${esc(d.colors.join(', '))}` : '',
+    d.composition ? `Склад: ${esc(d.composition)}` : '',
   ].filter(Boolean).join('\n');
-  let desc = String(p.description ?? '').trim();
   // leave room for the «buy» link that albums carry in the caption (limit 1024)
-  const room = 920 - head.length - facts.length - 4;
-  if (desc.length > room) desc = room > 80 ? `${desc.slice(0, room - 1).replace(/\s+\S*$/, '')}…` : '';
-  const lines = [head, desc ? esc(desc) : '', facts].filter(Boolean).join('\n\n');
-  return { html: lines, slug: p.slug, image: p.image };
+  const desc = fitText(d.description, 920 - head.length - facts.length - 4);
+  return { html: [head, desc ? esc(desc) : '', facts].filter(Boolean).join('\n\n'), slug: d.slug };
 }
 
 /** Up to `max` photos of a product as JPEG (skipping any that fail to load). */
@@ -189,31 +224,41 @@ export function nextKyivTime(hhmm: string, from = new Date()): Date {
  * skipped when it is already waiting in the queue or was posted in the last two days.
  */
 export async function scheduleAuto(items: { productId: number; kind: PostKind }[]): Promise<number> {
-  if (!(await channelReady()) || !items.length) return 0;
+  if (!items.length) return 0;
+  const targets: Target[] = [...((await channelReady()) ? (['telegram'] as Target[]) : []), ...(await autoNetworks())];
+  if (!targets.length) return 0;
   const s = await getSettings();
   const at = s.channel.autoTime ? nextKyivTime(s.channel.autoTime) : new Date();
   let queued = 0;
   for (const it of items.slice(0, 15)) {
-    // a discount is news even right after an arrival post; other kinds wait two days after any post
-    const busy = await one(
-      `SELECT 1 FROM telegram_posts WHERE product_id = $1 AND created_at > now() - interval '2 days' AND ($2 <> 'sale' OR kind = 'sale')
-       UNION ALL SELECT 1 FROM channel_queue WHERE product_id = $1 AND status = 'pending' LIMIT 1`,
-      [it.productId, it.kind],
-    );
-    if (busy) continue;
-    await query('INSERT INTO channel_queue(product_id, kind, run_at, source) VALUES ($1, $2, $3, $4)', [it.productId, it.kind, at, 'auto']);
-    queued++;
+    for (const target of targets) {
+      // a discount is news even right after an arrival post; other kinds wait two days after any post
+      const busy = await one(
+        `SELECT 1 FROM telegram_posts WHERE product_id = $1 AND target = $3 AND created_at > now() - interval '2 days' AND ($2 <> 'sale' OR kind = 'sale')
+         UNION ALL SELECT 1 FROM channel_queue WHERE product_id = $1 AND target = $3 AND status = 'pending' LIMIT 1`,
+        [it.productId, it.kind, target],
+      );
+      if (busy) continue;
+      await query('INSERT INTO channel_queue(product_id, kind, run_at, source, target) VALUES ($1, $2, $3, $4, $5)', [it.productId, it.kind, at, 'auto', target]);
+      queued++;
+    }
   }
   if (queued && at.getTime() <= Date.now()) void processQueue();
   return queued;
 }
 
 /** A post the admin scheduled by hand for a specific time. */
-export async function scheduleManual(productId: number, kind: PostKind, at: Date) {
+export async function scheduleManual(productId: number, kind: PostKind, at: Date, target: Target = 'telegram') {
   return one<{ id: number; run_at: string }>(
-    'INSERT INTO channel_queue(product_id, kind, run_at, source) VALUES ($1, $2, $3, $4) RETURNING id, run_at',
-    [productId, kind, at, 'manual'],
+    'INSERT INTO channel_queue(product_id, kind, run_at, source, target) VALUES ($1, $2, $3, $4, $5) RETURNING id, run_at',
+    [productId, kind, at, 'manual', target],
   );
+}
+
+/** Publishes one product to one place right now. */
+export async function publishTo(target: Target, productId: number, kind: PostKind): Promise<void> {
+  if (target === 'telegram') await postProduct(productId, kind);
+  else await publishToNetwork(target, productId, kind);
 }
 
 let processing = false;
@@ -223,9 +268,8 @@ export async function processQueue(): Promise<void> {
   if (processing) return;
   processing = true;
   try {
-    if (!(await channelReady())) return;
-    const due = await query<{ id: number; product_id: number | null; kind: string; attempts: number }>(
-      `SELECT q.id, q.product_id, q.kind, q.attempts FROM channel_queue q
+    const due = await query<{ id: number; product_id: number | null; kind: string; attempts: number; target: Target }>(
+      `SELECT q.id, q.product_id, q.kind, q.attempts, q.target FROM channel_queue q
        WHERE q.status = 'pending' AND q.run_at <= now() ORDER BY q.run_at, q.id LIMIT 15`,
     );
     for (const q of due) {
@@ -235,7 +279,7 @@ export async function processQueue(): Promise<void> {
           await query("UPDATE channel_queue SET status = 'cancelled', error = 'товар прихований або видалений' WHERE id = $1", [q.id]);
           continue;
         }
-        await postProduct(q.product_id!, q.kind as PostKind);
+        await publishTo(q.target, q.product_id!, q.kind as PostKind);
         await query("UPDATE channel_queue SET status = 'sent', sent_at = now() WHERE id = $1", [q.id]);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -255,8 +299,8 @@ export async function processQueue(): Promise<void> {
 }
 
 export function pendingPosts(productId?: number) {
-  return query<{ id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null }>(
-    `SELECT q.id, q.product_id, p.name, q.kind, q.run_at, q.source, q.attempts, q.error
+  return query<{ id: number; product_id: number; name: string; kind: string; run_at: string; source: string; attempts: number; error: string | null; target: Target }>(
+    `SELECT q.id, q.product_id, p.name, q.kind, q.run_at, q.source, q.attempts, q.error, q.target
      FROM channel_queue q JOIN products p ON p.id = q.product_id
      WHERE q.status = 'pending' AND ($1::int IS NULL OR q.product_id = $1) ORDER BY q.run_at LIMIT 50`,
     [productId ?? null],
@@ -285,11 +329,8 @@ export function digestProducts() {
 }
 
 /** «Новинки тижня»: an album of the first photos with a numbered list of links. */
-export async function postDigest(): Promise<{ messageId: number; count: number } | null> {
+async function telegramDigest(list: Awaited<ReturnType<typeof digestProducts>>): Promise<void> {
   const s = await getSettings();
-  if (!(await channelReady())) throw new Error('Канал не підключено');
-  const list = await digestProducts();
-  if (!list.length) return null;
   const linkable = config.publicUrl.startsWith('https://');
   const rows = list.map((p, i) => {
     const name = linkable ? `<a href="${esc(`${config.publicUrl}/product/${p.slug}`)}">${esc(p.name)}</a>` : esc(p.name);
@@ -304,24 +345,41 @@ export async function postDigest(): Promise<{ messageId: number; count: number }
     const jpg = raw ? await toJpeg(raw) : null;
     if (jpg) photos.push(jpg);
   }
-  const msg =
-    photos.length >= 2
-      ? await sendTelegramAlbum(s.channel.chatId, photos.slice(0, 10), text)
-      : photos[0]
-        ? await sendTelegramPhoto(s.channel.chatId, photos[0], text)
-        : await sendTelegram(s.channel.chatId, text);
+  if (photos.length >= 2) await sendTelegramAlbum(s.channel.chatId, photos.slice(0, 10), text);
+  else if (photos[0]) await sendTelegramPhoto(s.channel.chatId, photos[0], text);
+  else await sendTelegram(s.channel.chatId, text);
+}
+
+/** «Новинки тижня» to the Telegram channel and every connected network that takes automatic posts. */
+export async function postDigest(): Promise<{ count: number; posted: Target[]; errors: string[] } | null> {
+  const targets: Target[] = [...((await channelReady()) ? (['telegram'] as Target[]) : []), ...(await autoNetworks())];
+  if (!targets.length) throw new Error('Не підключено жодного каналу чи соцмережі');
+  const list = await digestProducts();
+  if (!list.length) return null;
+  const posted: Target[] = [];
+  const errors: string[] = [];
+  for (const t of targets) {
+    try {
+      if (t === 'telegram') await telegramDigest(list);
+      else await publishDigestToNetwork(t, list);
+      posted.push(t);
+    } catch (err) {
+      errors.push(`${t}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   await query(
     `INSERT INTO app_state(key, value, updated_at) VALUES ('last_digest', $1, now())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-    [JSON.stringify({ date: kyivParts(new Date()).date, count: list.length })],
+    [JSON.stringify({ date: kyivParts(new Date()).date, count: list.length, posted })],
   );
-  return { messageId: msg.message_id, count: list.length };
+  if (!posted.length) throw new Error(errors.join('; '));
+  return { count: list.length, posted, errors };
 }
 
 /** Posts the digest once on the chosen weekday after the chosen time (also if the server woke up late that day). */
 async function maybeDigest(): Promise<void> {
   const s = (await getSettings()).channel;
-  if (!s.digestEnabled || !(await channelReady())) return;
+  if (!s.digestEnabled || (!(await channelReady()) && !(await autoNetworks()).length)) return;
   const now = kyivParts(new Date());
   if (now.weekday !== s.digestDay || now.hhmm < s.digestTime) return;
   const last = await one<{ value: { date: string } }>("SELECT value FROM app_state WHERE key = 'last_digest'");

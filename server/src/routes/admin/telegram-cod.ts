@@ -9,13 +9,15 @@ import {
   lastPost,
   pendingPosts,
   postDigest,
-  postProduct,
+  publishTo,
   scheduleManual,
+  type Target,
   suggestKind,
   type PostKind,
 } from '../../services/channel.js';
 import { codSummary, markCodPaid, PHONE_KEY_SQL, phoneKey, setPrepayOnly } from '../../services/cod.js';
 import { sendTelegram, telegramEnabled } from '../../services/notify/telegram.js';
+import { authUrl, chooseFacebookPage, connectedNetworks, deleteSecret, fbConfigured, igConfigured, socialStatus } from '../../services/social.js';
 import { addHistory } from '../../services/orders.js';
 import { getSettings } from '../../services/settings.js';
 import { badRequest, HttpError } from '../../utils/errors.js';
@@ -87,25 +89,47 @@ adminTelegramCodRouter.put('/customer-flags', async (req, res) => {
 
 adminTelegramCodRouter.get('/products/:id/telegram', async (req, res) => {
   const id = Number(req.params.id);
-  res.json({ ready: await channelReady(), last: await lastPost(id), suggested: await suggestKind(id), scheduled: await pendingPosts(id) });
+  res.json({
+    ready: await channelReady(),
+    networks: await connectedNetworks(),
+    last: await lastPost(id),
+    suggested: await suggestKind(id),
+    scheduled: await pendingPosts(id),
+  });
 });
 
 adminTelegramCodRouter.post('/products/:id/telegram', async (req, res) => {
-  const { kind, at } = z
-    .object({ kind: z.enum(['new', 'restock', 'preorder', 'incoming', 'sale', 'plain']).optional(), at: z.string().datetime({ offset: true }).optional() })
+  const { kind, at, targets } = z
+    .object({
+      kind: z.enum(['new', 'restock', 'preorder', 'incoming', 'sale', 'plain']).optional(),
+      at: z.string().datetime({ offset: true }).optional(),
+      targets: z.array(z.enum(['telegram', 'instagram', 'facebook'])).min(1).default(['telegram']),
+    })
     .parse(req.body ?? {});
   const id = Number(req.params.id);
+  const k = (kind ?? (await suggestKind(id))) as PostKind;
+  const available: Target[] = [...((await channelReady()) ? (['telegram'] as Target[]) : []), ...(await connectedNetworks())];
+  const missing = targets.filter((t) => !available.includes(t));
+  if (missing.length) throw badRequest(`Не підключено: ${missing.join(', ')}`);
   if (at) {
     const when = new Date(at);
     if (when.getTime() < Date.now() - 60_000) throw badRequest('Цей час уже минув');
-    if (!(await channelReady())) throw badRequest('Канал не підключено (Налаштування → Telegram)');
-    return res.status(201).json({ scheduled: await scheduleManual(id, (kind ?? (await suggestKind(id))) as PostKind, when) });
+    const scheduled = [];
+    for (const t of targets) scheduled.push(await scheduleManual(id, k, when, t));
+    return res.status(201).json({ scheduled: scheduled[0], count: scheduled.length });
   }
-  try {
-    res.json(await postProduct(id, kind as PostKind | undefined));
-  } catch (err) {
-    throw new HttpError(502, friendlyTelegramError(err));
+  const done: Target[] = [];
+  const errors: string[] = [];
+  for (const t of targets) {
+    try {
+      await publishTo(t, id, k);
+      done.push(t);
+    } catch (err) {
+      errors.push(`${NET_NAMES[t]}: ${t === 'telegram' ? friendlyTelegramError(err) : err instanceof Error ? err.message : String(err)}`);
+    }
   }
+  if (!done.length) throw new HttpError(502, errors.join('; '));
+  res.json({ kind: k, posted: done, errors });
 });
 
 adminTelegramCodRouter.get('/channel/queue', async (_req, res) => {
@@ -126,6 +150,38 @@ adminTelegramCodRouter.post('/channel/digest', async (_req, res) => {
   }
   if (!r) throw badRequest('За останні 7 днів немає нових товарів у наявності — добірку не опубліковано');
   res.json(r);
+});
+
+// ---------- Instagram / Facebook ----------
+
+const NET_NAMES: Record<Target, string> = { telegram: 'Telegram', instagram: 'Instagram', facebook: 'Facebook' };
+
+adminTelegramCodRouter.get('/social', async (_req, res) => {
+  res.json(await socialStatus());
+});
+
+adminTelegramCodRouter.get('/social/connect/:net', async (req, res) => {
+  const net = z.enum(['instagram', 'facebook']).parse(req.params.net);
+  if (net === 'instagram' ? !igConfigured() : !fbConfigured()) {
+    throw badRequest(net === 'instagram' ? 'Додайте INSTAGRAM_APP_ID і INSTAGRAM_APP_SECRET на Render' : 'Додайте META_APP_ID і META_APP_SECRET на Render');
+  }
+  res.json({ url: authUrl(net, req.user!.id) });
+});
+
+adminTelegramCodRouter.post('/social/facebook/page', async (req, res) => {
+  const { pageId } = z.object({ pageId: z.string().min(1).max(40) }).parse(req.body);
+  try {
+    res.json(await chooseFacebookPage(pageId));
+  } catch (err) {
+    throw badRequest(err instanceof Error ? err.message : 'Не вдалося');
+  }
+});
+
+adminTelegramCodRouter.delete('/social/:net', async (req, res) => {
+  const net = z.enum(['instagram', 'facebook']).parse(req.params.net);
+  await deleteSecret(net);
+  if (net === 'facebook') await deleteSecret('facebook_pages');
+  res.json({ ok: true });
 });
 
 adminTelegramCodRouter.post('/channel/test', async (req, res) => {
