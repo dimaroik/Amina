@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, Subscription, debounceTime, distinctUntilChanged, of, switchMap, catchError } from 'rxjs';
 import { Api, errorMessage } from '../../../core/api.service';
 import { Auth } from '../../../core/auth.service';
+import { Analytics } from '../../../core/analytics.service';
 import { Cart } from '../../../core/cart.service';
 import type { CheckoutConfig, CreateOrderRequest, DeliveryMethod, OrderResponse, PaymentCode } from '../../../core/models';
 import { storage } from '../../../core/storage';
@@ -119,6 +120,10 @@ export class CheckoutPage {
   protected hasErrors = computed(() => Object.keys(this.errors()).length > 0);
 
   constructor() {
+    const items = this.cart.items();
+    if (items.length) {
+      inject(Analytics).beginCheckout(items.map((i) => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, variant: [i.color, i.size].filter(Boolean).join(' / ') })));
+    }
     const subs: Subscription[] = [];
     inject(DestroyRef).onDestroy(() => subs.forEach((s) => s.unsubscribe()));
 

@@ -225,6 +225,14 @@ adminMiscRouter.put('/settings', async (req, res) => {
       payment: z.record(z.string(), z.any()).optional(),
       notifications: z.record(z.string(), z.any()).optional(),
       chatbot: z.record(z.string(), z.any()).optional(),
+      // IDs end up in script URLs on every page, so only the exact formats are accepted
+      analytics: z
+        .object({
+          ga4Id: z.union([z.string().trim().toUpperCase().regex(/^G-[A-Z0-9]{4,20}$/, 'GA4 ID має вигляд G-XXXXXXXXXX'), z.literal('')]),
+          metaPixelId: z.union([z.string().trim().regex(/^\d{5,20}$/, 'Pixel ID складається лише з цифр'), z.literal('')]),
+        })
+        .partial()
+        .optional(),
     })
     .parse(req.body);
   res.json(await updateSettings(body as any));
