@@ -39,6 +39,9 @@ export interface ProductCard {
   /** sold out, but can be pre-ordered from a shipment on the way */
   preorder?: boolean;
   preorder_eta?: string | null;
+  /** sold out, but announced as on the way (no pre-order) */
+  incoming?: boolean;
+  incoming_eta?: string | null;
 }
 
 export interface ProductVariant {
@@ -52,6 +55,9 @@ export interface ProductVariant {
   /** units free for pre-order (only when out of stock) */
   preorder?: number;
   preorder_eta?: string | null;
+  /** sold out and on the way in a shipment */
+  incoming?: boolean;
+  incoming_eta?: string | null;
 }
 
 export interface ProductImage {

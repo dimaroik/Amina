@@ -32,7 +32,15 @@ interface Header {
   ordered_at: string;
   expected_at: string;
   preorder_enabled: boolean;
+  show_incoming: boolean;
 }
+
+type SiteMode = 'hidden' | 'incoming' | 'preorder';
+const SITE_MODES: { v: SiteMode; t: string; d: string }[] = [
+  { v: 'hidden', t: 'Не показувати', d: 'Покупці не бачать, що товар їде. Нові товари поставки з’являться на сайті після оприбуткування.' },
+  { v: 'incoming', t: 'Показати «В дорозі»', d: 'Розміри, яких немає, позначаються «В дорозі, очікується ~дата». Купити ще не можна — покупці залишають контакт і отримують повідомлення, щойно посилка надійде.' },
+  { v: 'preorder', t: 'Приймати передзамовлення', d: 'Ці розміри можна купити наперед — не більше, ніж їде в посилці. Після оприбуткування замовлення перейдуть у «Комплектується».' },
+];
 
 @Component({
   selector: 'app-admin-shipment',
@@ -83,10 +91,17 @@ interface Header {
                     <option value="value">Пропорційно ціні речі</option><option value="quantity">Порівну на кожну одиницю</option></select></div>
                 <div class="field full"><label class="label">Нотатка</label><textarea class="textarea" rows="2" [(ngModel)]="h.note"></textarea></div>
                 @if (!locked()) {
-                  <div class="field full preorder-box" [class.on]="h.preorder_enabled">
-                    <label class="adm-switch"><input type="checkbox" [(ngModel)]="h.preorder_enabled" /><span class="track"></span> <b>Приймати передзамовлення</b></label>
-                    <div class="adm-hint">Речі з цієї посилки, яких немає на складі, можна буде замовити на сайті наперед — з позначкою «Передзамовлення» й датою. Більше, ніж їде в посилці, продати не вийде. Нові товари поставки одразу з'являться на сайті.</div>
-                    @if (h.preorder_enabled) {
+                  <div class="field full preorder-box" [class.on]="mode() !== 'hidden'">
+                    <span class="label">Показувати на сайті, поки посилка в дорозі</span>
+                    <div class="modes" role="radiogroup">
+                      @for (m of siteModes; track m.v) {
+                        <button type="button" role="radio" class="mode" [class.active]="mode() === m.v" [attr.aria-checked]="mode() === m.v" (click)="setMode(m.v)">
+                          <span class="dot"></span>{{ m.t }}
+                        </button>
+                      }
+                    </div>
+                    <div class="adm-hint">{{ modeHint() }}@if (mode() !== 'hidden') { Нові товари поставки одразу з'являться на сайті. }</div>
+                    @if (mode() !== 'hidden') {
                       <div class="field eta"><label class="label">Очікуємо на складі</label><input class="input" type="date" [(ngModel)]="h.expected_at" [min]="h.ordered_at" />
                         <div class="adm-hint">Покупці побачать «очікується ~{{ etaPreview() }}». Можна залишити порожнім.</div></div>
                     }
@@ -140,7 +155,7 @@ interface Header {
                               @if (i.image) { <img [src]="i.image" class="adm-thumb-sm" alt="" /> } @else { <span class="adm-thumb-sm"></span> }
                               <div>
                                 @if (i.product_id) { <a class="t link-plain" [routerLink]="['/admin/products', i.product_id]">{{ i.name }}</a> } @else { <div class="t">{{ i.name }}</div> }
-                                <div class="s">{{ variantLabel(i) }}@if (i.activate_on_receive && s.status === 'in_transit') { · <span class="adm-pill" [title]="s.preorder_enabled ? 'Показується на сайті для передзамовлення' : 'З’явиться на сайті після оприбуткування'">{{ s.preorder_enabled ? 'новий · передзамовлення' : 'новий, прихований' }}</span> }</div>
+                                <div class="s">{{ variantLabel(i) }}@if (i.activate_on_receive && s.status === 'in_transit') { · <span class="adm-pill" [title]="s.preorder_enabled || s.show_incoming ? 'Уже показується на сайті' : 'З’явиться на сайті після оприбуткування'">{{ s.preorder_enabled ? 'новий · передзамовлення' : s.show_incoming ? 'новий · «в дорозі»' : 'новий, прихований' }}</span> }</div>
                               </div>
                             </div>
                           </td>
@@ -222,6 +237,11 @@ interface Header {
     .preorder-box { padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); gap: 6px; }
     .preorder-box.on { border-style: solid; border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: color-mix(in srgb, var(--warning) 6%, transparent); }
     .preorder-box .eta { max-width: 260px; margin-top: 6px; }
+    .modes { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mode { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); font-size: 13px; cursor: pointer; }
+    .mode .dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--line-strong); }
+    .mode.active { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+    .mode.active .dot { border-color: var(--bg); background: radial-gradient(circle, var(--bg) 0 3px, transparent 3.5px); }
     .pre-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
     .pre-list li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; }
     .pre-list a { font-weight: 600; color: var(--ink); }
@@ -247,6 +267,9 @@ export class ShipmentDetailPage {
 
   protected isNew = computed(() => !this.id() || this.id() === 'new');
   protected locked = computed(() => this.s()?.status === 'received');
+  protected siteModes = SITE_MODES;
+  protected mode = signal<SiteMode>('hidden');
+  protected modeHint = computed(() => SITE_MODES.find((m) => m.v === this.mode())!.d);
   protected hasPreorders = computed(() => (this.s()?.items ?? []).some((i) => i.preordered));
 
   constructor() {
@@ -254,6 +277,7 @@ export class ShipmentDetailPage {
       if (this.isNew()) {
         this.s.set(null);
         this.h = this.blank();
+        this.mode.set('hidden');
         this.loadRate(true);
         return;
       }
@@ -277,7 +301,7 @@ export class ShipmentDetailPage {
   private blank(): Header {
     return {
       title: '', supplier: '', currency: 'USD', exchange_rate: 41, extra_cost: 0, allocation: 'value', tracking: '', note: '',
-      ordered_at: new Date().toISOString().slice(0, 10), expected_at: '', preorder_enabled: false,
+      ordered_at: new Date().toISOString().slice(0, 10), expected_at: '', preorder_enabled: false, show_incoming: false,
     };
   }
 
@@ -287,7 +311,15 @@ export class ShipmentDetailPage {
       title: s.title, supplier: s.supplier, currency: s.currency, exchange_rate: Number(s.exchange_rate), extra_cost: Number(s.extra_cost),
       allocation: s.allocation, tracking: s.tracking, note: s.note, ordered_at: String(s.ordered_at).slice(0, 10),
       expected_at: s.expected_at ? String(s.expected_at).slice(0, 10) : '', preorder_enabled: s.preorder_enabled,
+      show_incoming: s.show_incoming,
     };
+    this.mode.set(s.preorder_enabled ? 'preorder' : s.show_incoming ? 'incoming' : 'hidden');
+  }
+
+  setMode(m: SiteMode) {
+    this.mode.set(m);
+    this.h.preorder_enabled = m === 'preorder';
+    this.h.show_incoming = m === 'incoming';
   }
 
   etaPreview() {

@@ -42,7 +42,7 @@ import { AdminApi, type Shipment } from '../../admin-api';
                       </div>
                     </td>
                     <td data-label="Статус">
-                      @if (s.status === 'received') { <span class="adm-pill ok">Оприбутковано</span> } @else { <span class="adm-pill warn">В дорозі</span> } @if (s.status === 'in_transit' && s.preorder_enabled) { <span class="adm-pill">передзамовлення</span> }
+                      @if (s.status === 'received') { <span class="adm-pill ok">Оприбутковано</span> } @else { <span class="adm-pill warn">В дорозі</span> } @if (s.status === 'in_transit' && s.preorder_enabled) { <span class="adm-pill">передзамовлення</span> } @else if (s.status === 'in_transit' && s.show_incoming) { <span class="adm-pill">«в дорозі» на сайті</span> }
                     </td>
                     <td class="num" data-label="Одиниць">{{ s.totals.units }}</td>
                     <td class="num" data-label="Сума">{{ s.totals.total | number: '1.0-2' }} {{ s.currency }}</td>
