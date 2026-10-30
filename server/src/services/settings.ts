@@ -48,12 +48,25 @@ export interface AnalyticsSettings {
   metaPixelId: string;
 }
 
+export interface NovaPoshtaSettings {
+  senderCityRef: string;
+  senderCityName: string;
+  senderWarehouseRef: string;
+  senderWarehouseName: string;
+  senderPhone: string;
+  defaultWeight: number;
+  defaultDescription: string;
+  payer: 'Recipient' | 'Sender';
+  autoTrack: boolean;
+}
+
 export interface Settings {
   store: StoreSettings;
   payment: PaymentSettings;
   notifications: NotificationSettings;
   chatbot: ChatbotSettings;
   analytics: AnalyticsSettings;
+  novaPoshta: NovaPoshtaSettings;
 }
 
 export const defaultSettings: Settings = {
@@ -94,6 +107,17 @@ export const defaultSettings: Settings = {
   analytics: {
     ga4Id: '',
     metaPixelId: '',
+  },
+  novaPoshta: {
+    senderCityRef: '',
+    senderCityName: '',
+    senderWarehouseRef: '',
+    senderWarehouseName: '',
+    senderPhone: '',
+    defaultWeight: 1,
+    defaultDescription: 'Одяг',
+    payer: 'Recipient',
+    autoTrack: true,
   },
   chatbot: {
     enabled: true,

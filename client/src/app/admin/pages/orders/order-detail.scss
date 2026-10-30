@@ -74,3 +74,6 @@
   .sum { text-align: right; font-size: 15px; }
   .thanks { margin-top: 24px; font-family: var(--font-serif); font-size: 18px; }
 }
+
+.ttn { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #f6f8f5; border: 1px solid #dfe8dc; border-radius: 8px; }
+.ttn .del { color: var(--danger); }

@@ -32,6 +32,9 @@ interface Filters {
           <div class="sub">Усі замовлення магазину. Натисніть на рядок, щоб відкрити деталі.</div>
         </div>
         <div class="actions">
+          <button class="btn btn-ghost btn-sm" (click)="syncNp()" [disabled]="syncing()" title="Оновити статуси посилок з Нової пошти">
+            <app-icon name="refresh" [size]="15" /> {{ syncing() ? 'Оновлюємо…' : 'Статуси НП' }}
+          </button>
           <button class="btn btn-outline btn-sm" (click)="exportCsv()" [disabled]="exporting()">
             <app-icon name="download" [size]="15" /> CSV
           </button>
@@ -203,6 +206,23 @@ export class OrdersListPage {
       error: (e) => {
         this.toasts.error(errorMessage(e));
         this.load();
+      },
+    });
+  }
+
+  protected syncing = signal(false);
+
+  syncNp() {
+    this.syncing.set(true);
+    this.api.post<{ checked: number; updated: number }>('/np/sync').subscribe({
+      next: (r) => {
+        this.syncing.set(false);
+        this.toasts.success(r.checked ? `Перевірено посилок: ${r.checked}, оновлено: ${r.updated}` : 'Немає посилок для відстеження');
+        if (r.updated) this.load();
+      },
+      error: (e) => {
+        this.syncing.set(false);
+        this.toasts.error(errorMessage(e));
       },
     });
   }

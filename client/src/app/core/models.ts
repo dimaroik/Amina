@@ -236,7 +236,7 @@ export interface OrderResponse {
 export interface CreateOrderRequest {
   customer: { name: string; phone: string; email: string; contactChannel: 'phone' | 'telegram' | 'viber' | 'whatsapp' | 'email' };
   deliveryMethodId: number;
-  delivery: { city: string; cityRef: string; branch: string; address: string };
+  delivery: { city: string; cityRef: string; branch: string; branchRef?: string; address: string };
   paymentMethod: PaymentCode;
   promoCode?: string;
   comment: string;

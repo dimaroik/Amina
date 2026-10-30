@@ -68,6 +68,8 @@ export class CheckoutPage {
   protected city = signal('');
   protected cityRef = signal('');
   protected branch = signal('');
+  /** Nova Poshta warehouse ref of the picked branch — lets the admin create a waybill in one click. */
+  protected branchRef = signal('');
   protected address = signal('');
   protected payment = signal<PaymentCode | null>(null);
   protected comment = signal('');
@@ -171,6 +173,7 @@ export class CheckoutPage {
     this.city.set(v);
     this.cityRef.set('');
     this.branch.set('');
+    this.branchRef.set('');
     if (this.np()) {
       this.cityOpen.set(true);
       this.cityQ.next(v.trim());
@@ -181,10 +184,12 @@ export class CheckoutPage {
     this.cityRef.set(c.ref);
     this.cityOpen.set(false);
     this.branch.set('');
+    this.branchRef.set('');
     this.whQ.next('');
   }
   onBranch(v: string) {
     this.branch.set(v);
+    this.branchRef.set('');
     if (this.np() && this.cityRef()) {
       this.whOpen.set(true);
       this.whQ.next(v.trim());
@@ -198,13 +203,12 @@ export class CheckoutPage {
   }
   pickWarehouse(w: Warehouse) {
     this.branch.set(w.name);
+    this.branchRef.set(w.ref);
     this.whOpen.set(false);
   }
-  closeLists() {
-    setTimeout(() => {
-      this.cityOpen.set(false);
-      this.whOpen.set(false);
-    }, 180);
+  /** Each field closes only its own list, so a quick tap from city to branch doesn't shut the branch list. */
+  closeLists(which: 'city' | 'wh') {
+    setTimeout(() => (which === 'city' ? this.cityOpen : this.whOpen).set(false), 180);
   }
 
   applyPromo(silent = false) {
@@ -242,6 +246,7 @@ export class CheckoutPage {
         city: this.delivery()?.type === 'pickup' ? '' : this.city().trim(),
         cityRef: this.cityRef(),
         branch: this.delivery()?.type === 'np_warehouse' ? this.branch().trim() : '',
+        branchRef: this.delivery()?.type === 'np_warehouse' ? this.branchRef() : '',
         address: this.delivery()?.type === 'np_courier' || this.delivery()?.type === 'address' ? this.address().trim() : '',
       },
       paymentMethod: this.payment()!,

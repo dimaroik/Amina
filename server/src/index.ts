@@ -22,6 +22,7 @@ import { messengersRouter } from './routes/messengers.js';
 import { publicRouter } from './routes/public.js';
 import { stockAlertsRouter } from './routes/stock-alerts.js';
 import { processStockAlerts } from './services/stock-alerts.js';
+import { startTrackingJob } from './services/np-tracking.js';
 import { setupTelegramWebhook } from './services/notify/telegram.js';
 import { setupViberWebhook } from './services/notify/viber.js';
 import { errorHandler, HttpError } from './utils/errors.js';
@@ -82,6 +83,7 @@ async function main() {
   });
   void withRetries('telegram', setupTelegramWebhook);
   processStockAlerts().catch((err) => console.error('[stock-alerts]', err));
+  startTrackingJob();
   void withRetries('viber', setupViberWebhook);
 }
 
