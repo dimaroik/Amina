@@ -233,7 +233,15 @@ adminMiscRouter.put('/settings', async (req, res) => {
     .object({
       store: z.record(z.string(), z.any()).optional(),
       payment: z.record(z.string(), z.any()).optional(),
-      notifications: z.record(z.string(), z.any()).optional(),
+      notifications: z
+        .record(z.string(), z.any())
+        .superRefine((n, ctx) => {
+          const bad = Array.isArray(n.telegramAdminChatIds) ? n.telegramAdminChatIds.filter((id: unknown) => !/^-?\d{5,20}$/.test(String(id))) : [];
+          if (bad.length) {
+            ctx.addIssue({ code: 'custom', message: `Telegram chat ID має бути числом (напишіть боту /id), а не «${bad.join(', ')}»` });
+          }
+        })
+        .optional(),
       chatbot: z.record(z.string(), z.any()).optional(),
       // IDs end up in script URLs on every page, so only the exact formats are accepted
       analytics: z
