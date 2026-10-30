@@ -73,6 +73,14 @@ export interface ChannelSettings {
   /** products with 2+ photos are posted as an album of up to 4 */
   album: boolean;
   postOnSale: boolean;
+  /** a product added by hand is posted once it is on, has a photo and is in stock */
+  postOnCreate: boolean;
+  /** stock changed by hand from 0 to more → «Знову в наявності» */
+  postOnRestock: boolean;
+  /** minutes to wait after the last save of a hand-made product (more edits push it back) */
+  manualDelay: number;
+  /** automatic posts and the weekly digest go to the Telegram channel */
+  telegramAuto: boolean;
   digestEnabled: boolean;
   /** ISO weekday: 1 — Monday … 7 — Sunday */
   digestDay: number;
@@ -156,6 +164,10 @@ export const defaultSettings: Settings = {
     autoTime: '',
     album: true,
     postOnSale: true,
+    postOnCreate: true,
+    postOnRestock: true,
+    manualDelay: 15,
+    telegramAuto: true,
     digestEnabled: true,
     digestDay: 5,
     digestTime: '18:00',
@@ -163,7 +175,7 @@ export const defaultSettings: Settings = {
   social: {
     instagram: true,
     facebook: true,
-    hashtags: '#amina #жіночийодяг #одяг #стиль',
+    hashtags: '#amina #одяг #стиль #новинки',
   },
   chatbot: {
     enabled: true,

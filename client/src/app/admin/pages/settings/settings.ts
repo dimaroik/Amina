@@ -20,7 +20,7 @@ interface ChannelQueue {
   digest: { products: { id: number; name: string }[]; last: { date: string; count: number } | null };
 }
 
-type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'social' | 'chatbot' | 'analytics' | 'integrations';
+type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'social' | 'autopost' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
 
 const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean; area?: boolean }[] = [
@@ -148,21 +148,8 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   </div>
                   <div class="adm-hint">Для публічного каналу — його @назва. Для приватного — числовий ID (починається з -100).</div></div>
                 <div class="field"><label class="label">Текст кнопки під постом</label><input class="input" [(ngModel)]="s.channel.buttonText" maxlength="40" /></div>
-                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnReceive" /><span class="track"></span> Публікувати новинки, коли поставку оприбутковано</label>
-                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnAnnounce" /><span class="track"></span> Публікувати «Уже в дорозі / Передзамовлення», коли поставку показано на сайті</label>
-                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnSale" /><span class="track"></span> Публікувати, коли на товар з'являється знижка (або стає більшою)</label>
                 <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.album" /><span class="track"></span> Альбом до 4 фото, якщо в товару кілька фото</label>
-                <div class="field">
-                  <label class="label">Коли публікувати автоматичні пости</label>
-                  <div class="adm-row nowrap">
-                    <select class="select" style="max-width:220px" [ngModel]="s.channel.autoTime ? 'time' : 'now'" (ngModelChange)="s.channel.autoTime = $event === 'time' ? '19:00' : ''">
-                      <option value="now">Одразу</option><option value="time">О певній годині</option>
-                    </select>
-                    @if (s.channel.autoTime) { <input class="input" type="time" style="max-width:130px" [(ngModel)]="s.channel.autoTime" /> }
-                  </div>
-                  <div class="adm-hint">@if (s.channel.autoTime) { Новинки, «в дорозі» і знижки чекатимуть до {{ s.channel.autoTime }} за Києвом і вийдуть по черзі. } @else { Пост виходить одразу після події. } Ручні пости можна запланувати на будь-який час у редакторі товару.</div>
-                </div>
-                <p class="adm-hint" style="margin:0">Пост: фото товару (або альбом), назва, ціна (і знижка), опис, розміри, кольори та посилання на сторінку товару. Будь-який товар можна опублікувати вручну — кнопкою «Telegram» у редакторі товару.</p>
+                <p class="adm-hint" style="margin:0">Пост: фото товару (або альбом), назва, ціна (і знижка), опис, розміри, кольори та посилання на сторінку товару. Коли саме публікується — у вкладці <a class="link-plain" href="" (click)="$event.preventDefault(); tab.set('autopost')">«Автопублікація»</a>. Будь-який товар можна опублікувати вручну — кнопкою «Опублікувати» в редакторі товару.</p>
               </div>
               <div class="adm-card pad adm-stack" style="gap:12px">
                 <div class="adm-section-title">Керування замовленнями з Telegram</div>
@@ -176,6 +163,55 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 <p class="small" style="margin:0">Команди бота: <code>/orders</code> — замовлення в роботі, <code>/today</code> — продажі за сьогодні, <code>/cod</code> — накладений платіж, <code>/help</code>.</p>
                 <p class="adm-hint" style="margin:0">Кнопки працюють лише в чатах зі списку, тож випадкові люди нічого змінити не можуть. Щоб дізнатися свій chat ID, напишіть боту <code>/id</code>.</p>
                 @if (!s.notifications.telegramAdminChatIds.length) { <p class="adm-hint" style="margin:0;color:var(--warning)">Зараз жодного chat ID не вказано — додайте свій у вкладці «Сповіщення».</p> }
+              </div>
+            </div>
+          }
+          @case ('autopost') {
+            <div class="adm-grid adm-grid-2">
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Куди публікувати</div>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.telegramAuto" /><span class="track"></span> Telegram-канал
+                  @if (!s.channel.chatId) { <span class="adm-muted small">— канал не вказано</span> }</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social.instagram" /><span class="track"></span> Instagram
+                  @if (social() && !social()!.instagram.connected) { <span class="adm-muted small">— не підключено</span> }</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social.facebook" /><span class="track"></span> Facebook
+                  @if (social() && !social()!.facebook.connected) { <span class="adm-muted small">— не підключено</span> }</label>
+                <p class="adm-hint" style="margin:0">Правила нижче однакові для всіх місць. Підключення — у вкладках «Telegram» та «Instagram і Facebook».</p>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Коли публікувати</div>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnCreate" /><span class="track"></span> ✨ Новий товар, доданий вручну</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnRestock" /><span class="track"></span> 🔁 Залишок змінено вручну з 0 — «Знову в наявності»</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnReceive" /><span class="track"></span> 📦 Поставку оприбутковано — новинки й «знову в наявності»</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnAnnounce" /><span class="track"></span> 🚚 Поставку показано на сайті — «Уже в дорозі / Передзамовлення»</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnSale" /><span class="track"></span> 🏷 На товар з'явилась знижка (або стала більшою)</label>
+                <div class="field">
+                  <label class="label">Для товарів, доданих вручну, чекати після останнього збереження</label>
+                  <select class="select" style="max-width:220px" [(ngModel)]="s.channel.manualDelay">
+                    @for (d of delays; track d.v) { <option [ngValue]="d.v">{{ d.l }}</option> }
+                  </select>
+                  <div class="adm-hint">Щоб встигнути дозаповнити фото, опис і розміри. Кожне нове збереження відкладає пост ще на стільки ж.</div>
+                </div>
+                <div class="field">
+                  <label class="label">Час виходу автоматичних постів</label>
+                  <div class="adm-row nowrap">
+                    <select class="select" style="max-width:220px" [ngModel]="s.channel.autoTime ? 'time' : 'now'" (ngModelChange)="s.channel.autoTime = $event === 'time' ? '19:00' : ''">
+                      <option value="now">Одразу</option><option value="time">О певній годині</option>
+                    </select>
+                    @if (s.channel.autoTime) { <input class="input" type="time" style="max-width:130px" [(ngModel)]="s.channel.autoTime" /> }
+                  </div>
+                  <div class="adm-hint">@if (s.channel.autoTime) { Пости чекатимуть до {{ s.channel.autoTime }} за Києвом і вийдуть по черзі. } @else { Пост виходить одразу після події (для доданих вручну — після очікування вище). }</div>
+                </div>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Що не публікується</div>
+                <ul class="steps small">
+                  <li>Прихований товар, товар без фото або без залишку («Новинка», «Знову в наявності», «Знижка»). Якщо товар сховали чи він закінчився, поки пост чекав, — пост скасовується.</li>
+                  <li>Той самий товар частіше ніж раз на 2 дні в одне місце. Виняток — нова або більша знижка.</li>
+                  <li>«Новинкою» вважається товар, доданий за останні 14 днів, який ще ніде не публікувався. Редагування старих товарів нічого не публікує.</li>
+                  <li>Оприбуткування поставки публікує до 15 товарів за раз.</li>
+                </ul>
+                <p class="adm-hint" style="margin:0">Будь-який товар можна опублікувати вручну або запланувати на певний час — кнопкою «Опублікувати» в редакторі товару. Вручну правила вище не діють.</p>
               </div>
               <div class="adm-card pad adm-stack" style="gap:12px">
                 <div class="adm-section-title">«Новинки тижня» — добірка одним постом</div>
@@ -192,7 +228,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   <div class="small">Зараз у добірці: <b>{{ q.digest.products.length }}</b>@if (q.digest.products.length) { — {{ digestNames() }} }</div>
                   @if (q.digest.last) { <div class="adm-hint">Остання добірка: {{ q.digest.last.date }} ({{ q.digest.last.count }} товарів)</div> }
                 }
-                <div><button class="btn btn-ghost btn-xs" [disabled]="!s.channel.chatId || digestBusy()" (click)="postDigest()"><app-icon name="send" [size]="13" /> {{ digestBusy() ? 'Публікуємо…' : 'Опублікувати добірку зараз' }}</button></div>
+                <div><button class="btn btn-ghost btn-xs" [disabled]="digestBusy()" (click)="postDigest()"><app-icon name="send" [size]="13" /> {{ digestBusy() ? 'Публікуємо…' : 'Опублікувати добірку зараз' }}</button></div>
               </div>
               <div class="adm-card pad adm-stack" style="gap:12px">
                 <div class="adm-section-title">Заплановані пости</div>
@@ -234,7 +270,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                           <div class="adm-row">@for (p of so.facebook.pending; track p.id) { <button class="btn btn-ghost btn-xs" (click)="choosePage(p.id)">{{ p.name }}</button> }</div></div>
                       }
                     }
-                    <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social[net.key]" /><span class="track"></span> Автопостинг (ті самі події й час, що в Telegram)</label>
+                    <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.social[net.key]" /><span class="track"></span> Автопублікація (правила — у вкладці «Автопублікація»)</label>
                     <div class="adm-row">
                       <button class="btn btn-sm" [disabled]="!(so[net.key].configured || so.facebook.configured) || !so.https" (click)="connect(net.key)">{{ connected(net.key) ? 'Перепідключити' : so.instagram.configured ? 'Підключити ' + net.title : 'Підключити Facebook та Instagram' }}</button>
                       @if (connected(net.key)) { <button class="btn btn-ghost btn-xs" (click)="disconnect(net.key)">Відключити</button> }
@@ -271,7 +307,7 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   <li>Фото автоматично готуються під Instagram: 1080×1350 (4:5), JPEG.</li>
                   <li>«Новинки тижня» виходить у всі підключені мережі одночасно.</li>
                 </ul>
-                <div class="field"><label class="label">Хештеги під постами</label><input class="input" [(ngModel)]="s.social.hashtags" placeholder="#amina #жіночийодяг" /></div>
+                <div class="field"><label class="label">Хештеги під постами</label><input class="input" [(ngModel)]="s.social.hashtags" placeholder="#amina #одяг" /></div>
               </div>
             </div>
           }
@@ -399,6 +435,7 @@ export class SettingsPage {
     { v: 'notifications', l: 'Сповіщення' },
     { v: 'telegram', l: 'Telegram' },
     { v: 'social', l: 'Instagram і Facebook' },
+    { v: 'autopost', l: 'Автопублікація' },
     { v: 'chatbot', l: 'Чат-бот' },
     { v: 'analytics', l: 'Аналітика' },
     { v: 'integrations', l: 'Інтеграції' },
@@ -445,7 +482,10 @@ export class SettingsPage {
     });
     effect(() => {
       if (this.tab() === 'payment') this.renderQr();
-      if (this.tab() === 'telegram') this.loadQueue();
+      if (this.tab() === 'autopost') {
+        this.loadQueue();
+        this.loadSocial();
+      }
       if (this.tab() === 'social') this.loadSocial();
     });
   }
@@ -476,6 +516,9 @@ export class SettingsPage {
   protected weekdays = [
     { v: 1, l: 'Понеділок' }, { v: 2, l: 'Вівторок' }, { v: 3, l: 'Середа' }, { v: 4, l: 'Четвер' },
     { v: 5, l: 'Пʼятниця' }, { v: 6, l: 'Субота' }, { v: 7, l: 'Неділя' },
+  ];
+  protected delays = [
+    { v: 0, l: 'Не чекати' }, { v: 5, l: '5 хвилин' }, { v: 15, l: '15 хвилин' }, { v: 30, l: '30 хвилин' }, { v: 60, l: '1 годину' }, { v: 120, l: '2 години' },
   ];
   protected kindLabels: Record<string, string> = { new: 'новинка', restock: 'знову в наявності', sale: 'знижка', preorder: 'передзамовлення', incoming: 'в дорозі', plain: 'без позначки' };
   protected targetLabels: Record<string, string> = { telegram: 'Telegram', instagram: 'Instagram', facebook: 'Facebook' };
