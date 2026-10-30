@@ -1,4 +1,5 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { Analytics } from './analytics.service';
 import { Api } from './api.service';
 import type { CartItem } from './models';
 import { storage } from './storage';
@@ -19,6 +20,7 @@ interface CheckResult {
 @Injectable({ providedIn: 'root' })
 export class Cart {
   private api = inject(Api);
+  private analytics = inject(Analytics);
   readonly items = signal<CartItem[]>(storage.get<CartItem[]>('amina.cart', []));
   readonly drawerOpen = signal(false);
   /** Bumps whenever an item is added — used for the header badge animation. */
@@ -49,6 +51,7 @@ export class Cart {
       return [...list, { ...item, quantity: Math.min(quantity, item.stock || 99) }];
     });
     this.pulse.update((n) => n + 1);
+    this.analytics.addToCart({ id: item.productId, name: item.name, price: item.price, quantity, variant: [item.color, item.size].filter(Boolean).join(' / ') });
     if (openDrawer) this.drawerOpen.set(true);
   }
 

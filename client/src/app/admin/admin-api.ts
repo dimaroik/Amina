@@ -189,6 +189,7 @@ export interface AdminSettings {
       notifyAdminOnChatHandoff: boolean;
     };
     chatbot: { enabled: boolean; botName: string; greeting: string; instructions: string };
+    analytics: { ga4Id: string; metaPixelId: string };
   };
   integrations: {
     email: boolean;

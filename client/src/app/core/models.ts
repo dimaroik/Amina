@@ -142,6 +142,7 @@ export interface StoreInfo {
 export interface PublicSettings {
   store: StoreInfo;
   chatbot: { enabled: boolean; botName: string; greeting: string };
+  analytics: { ga4Id: string; metaPixelId: string };
   telegramBot: string;
 }
 

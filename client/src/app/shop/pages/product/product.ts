@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, injec
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { Analytics } from '../../../core/analytics.service';
 import { Cart } from '../../../core/cart.service';
 import type { ProductCard, ProductDetail, ProductVariant } from '../../../core/models';
 import { storage } from '../../../core/storage';
@@ -206,6 +207,7 @@ export class ProductPage {
   private wishlist = inject(Wishlist);
   private toasts = inject(Toasts);
   private title = inject(Title);
+  private analytics = inject(Analytics);
 
   protected p = signal<ProductDetail | null>(null);
   protected error = signal(false);
@@ -307,6 +309,7 @@ export class ProductPage {
   private init(p: ProductDetail) {
     this.p.set(p);
     this.title.setTitle(`${p.name} — Amina`);
+    this.analytics.viewItem({ id: p.id, name: p.name, price: p.price, category: p.category_name });
     this.active.set(0);
     this.qty.set(1);
     this.openSection.set(0);

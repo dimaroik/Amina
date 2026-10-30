@@ -15,6 +15,7 @@ publicRouter.get('/settings/public', async (_req, res) => {
   res.json({
     store: s.store,
     chatbot: { enabled: s.chatbot.enabled, botName: s.chatbot.botName, greeting: s.chatbot.greeting },
+    analytics: s.analytics,
     telegramBot: config.telegram.botUsername,
   });
 });
