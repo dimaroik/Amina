@@ -114,6 +114,7 @@ export class AdminLayout implements OnInit, OnDestroy {
     [
       { path: '/admin', label: 'Огляд', icon: 'dashboard', exact: true },
       { path: '/admin/orders', label: 'Замовлення', icon: 'box', badge: () => this.api.newOrders() },
+      { path: '/admin/cod', label: 'Накладений платіж', icon: 'card' },
       { path: '/admin/customers', label: 'Клієнти', icon: 'users' },
       { path: '/admin/chats', label: 'Звернення', icon: 'chat', badge: () => this.api.waitingChats() },
       { path: '/admin/reviews', label: 'Відгуки', icon: 'star', badge: () => this.api.pendingReviews() },

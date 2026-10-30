@@ -11,6 +11,7 @@ import type { HasUnsavedChanges } from '../../admin.routes';
 import { Confirm } from '../../ui/confirm';
 import { ImageUpload } from '../../ui/image-upload';
 import { AiFill } from '../../ui/ai-fill';
+import { TgPost } from '../../ui/tg-post';
 
 const SIZE_PRESETS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'One size'];
 const COLOR_PRESETS: [string, string][] = [
@@ -27,7 +28,7 @@ const blank = (): AdminProduct => ({
 @Component({
   selector: 'app-admin-product-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, CdkDropList, CdkDrag, Icon, ImageUpload, AiFill],
+  imports: [FormsModule, RouterLink, CdkDropList, CdkDrag, Icon, ImageUpload, AiFill, TgPost],
   template: `
     <div class="adm-page">
       <a routerLink="/admin/products" class="adm-back"><app-icon name="arrow-left" [size]="14" /> Усі товари</a>
@@ -38,6 +39,7 @@ const blank = (): AdminProduct => ({
         <div class="actions">
           @if (!isNew() && p().slug) { <a class="btn btn-ghost btn-sm" [href]="'/product/' + p().slug" target="_blank"><app-icon name="eye" [size]="15" /> На сайті</a> }
           @if (!isNew()) { <button class="btn btn-ghost btn-sm" (click)="duplicate()"><app-icon name="copy" [size]="15" /> Дублювати</button> }
+          @if (!isNew() && p().id) { <adm-tg-post [productId]="p().id!" /> }
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import { Icon } from '../../../shared/icon';
 import { AdminApi, type AdminSettings } from '../../admin-api';
 import { NpPicker } from '../../ui/np-picker';
 
-type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'chatbot' | 'analytics' | 'integrations';
+type Tab = 'store' | 'payment' | 'np' | 'notifications' | 'telegram' | 'chatbot' | 'analytics' | 'integrations';
 type S = AdminSettings['settings'];
 
 const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean; area?: boolean }[] = [
@@ -70,6 +70,13 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                   <div class="field"><label class="label">Банк</label><input class="input" [(ngModel)]="s.payment.bankName" /></div>
                   <div class="field"><label class="label">Призначення платежу</label><input class="input" [(ngModel)]="s.payment.paymentPurpose" /><div class="adm-hint">{{ '{number}' }} заміниться номером замовлення</div></div>
                 </div>
+                <div class="adm-sep"></div>
+                <div class="adm-section-title">Накладений платіж</div>
+                <div class="field" style="max-width:420px">
+                  <label class="label">Вимикати для номера після стількох невикупів</label>
+                  <input class="input" type="number" min="0" max="10" [(ngModel)]="s.payment.codBlockAfterRefusals" />
+                  <div class="adm-hint">Якщо клієнтка стільки разів не забрала посилку, на сайті їй буде доступна лише передоплата. 0 — не вимикати. Окремі номери можна позначити вручну на сторінці «Накладений платіж».</div>
+                </div>
               </div>
               <div class="adm-card pad qr-card">
                 <div class="adm-section-title">Так побачить клієнт</div>
@@ -108,6 +115,42 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
                 </div>
                 <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.novaPoshta.autoTrack" /><span class="track"></span> Автоматично оновлювати статуси замовлень за трекінгом</label>
                 <p class="adm-hint" style="margin:0">Кожні 30 хв (поки сайт активний): посилка в дорозі → «Відправлене», отримана → «Доставлене»; коли прибула у відділення — клієнт отримує повідомлення.</p>
+              </div>
+            </div>
+          }
+          @case ('telegram') {
+            <div class="adm-grid adm-grid-2">
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Канал магазину — автопостинг</div>
+                @if (!i()?.telegram) { <p class="adm-hint" style="margin:0;color:var(--warning)">Спершу підключіть Telegram-бота (TELEGRAM_BOT_TOKEN на Render).</p> }
+                <ol class="steps small">
+                  <li>Відкрийте канал → Адміністратори → Додати адміністратора → знайдіть бота <b>{{ i()?.telegramBot ? '@' + i()!.telegramBot : 'магазину' }}</b>.</li>
+                  <li>Дайте йому право «Публікація повідомлень».</li>
+                  <li>Вкажіть канал нижче й натисніть «Перевірити».</li>
+                </ol>
+                <div class="field"><label class="label">Канал</label>
+                  <div class="adm-row nowrap">
+                    <input class="input" [(ngModel)]="s.channel.chatId" placeholder="@amina_store або -1001234567890" />
+                    <button class="btn btn-ghost btn-xs" [disabled]="!s.channel.chatId" (click)="testChannel()">Перевірити</button>
+                  </div>
+                  <div class="adm-hint">Для публічного каналу — його @назва. Для приватного — числовий ID (починається з -100).</div></div>
+                <div class="field"><label class="label">Текст кнопки під постом</label><input class="input" [(ngModel)]="s.channel.buttonText" maxlength="40" /></div>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnReceive" /><span class="track"></span> Публікувати новинки, коли поставку оприбутковано</label>
+                <label class="adm-switch"><input type="checkbox" [(ngModel)]="s.channel.postOnAnnounce" /><span class="track"></span> Публікувати «Уже в дорозі / Передзамовлення», коли поставку показано на сайті</label>
+                <p class="adm-hint" style="margin:0">Пост: перше фото товару, назва, ціна (і знижка), опис, розміри, кольори та кнопка на сторінку товару. Будь-який товар можна опублікувати вручну — кнопкою «Telegram» у редакторі товару.</p>
+              </div>
+              <div class="adm-card pad adm-stack" style="gap:12px">
+                <div class="adm-section-title">Керування замовленнями з Telegram</div>
+                <p class="small" style="margin:0">Чати, вказані у вкладці «Сповіщення» (поле «Telegram chat ID»), отримують нові замовлення з кнопками:</p>
+                <ul class="steps small">
+                  <li>✅ Підтвердити / ❌ Скасувати (з підтвердженням)</li>
+                  <li>📦 Створити ТТН з налаштувань «Нова пошта» і 🏷 отримати наклейку PDF</li>
+                  <li>💰 Гроші отримано — для накладеного платежу</li>
+                  <li>🚫 Лише передоплата — якщо посилку не забрали</li>
+                </ul>
+                <p class="small" style="margin:0">Команди бота: <code>/orders</code> — замовлення в роботі, <code>/today</code> — продажі за сьогодні, <code>/cod</code> — накладений платіж, <code>/help</code>.</p>
+                <p class="adm-hint" style="margin:0">Кнопки працюють лише в чатах зі списку, тож випадкові люди нічого змінити не можуть. Щоб дізнатися свій chat ID, напишіть боту <code>/id</code>.</p>
+                @if (!s.notifications.telegramAdminChatIds.length) { <p class="adm-hint" style="margin:0;color:var(--warning)">Зараз жодного chat ID не вказано — додайте свій у вкладці «Сповіщення».</p> }
               </div>
             </div>
           }
@@ -209,6 +252,9 @@ const STORE_FIELDS: { key: string; label: string; hint?: string; wide?: boolean;
   `,
   styles: `
     .qr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+    .steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); }
+    .nowrap { flex-wrap: nowrap; }
+    code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
     .qr { width: 200px; height: 200px; border-radius: 8px; border: 1px solid var(--line); }
   `,
 })
@@ -220,6 +266,7 @@ export class SettingsPage {
     { v: 'payment', l: 'Оплата' },
     { v: 'np', l: 'Нова пошта' },
     { v: 'notifications', l: 'Сповіщення' },
+    { v: 'telegram', l: 'Telegram' },
     { v: 'chatbot', l: 'Чат-бот' },
     { v: 'analytics', l: 'Аналітика' },
     { v: 'integrations', l: 'Інтеграції' },
@@ -277,6 +324,15 @@ export class SettingsPage {
     const link = this.jar(this.s()?.payment.monoJarUrl ?? '');
     if (!link) return this.qr.set('');
     QRCode.toDataURL(link, { margin: 1, width: 400, color: { dark: '#1f1d1a', light: '#ffffff' } }).then((d) => this.qr.set(d));
+  }
+
+  testChannel() {
+    const chatId = this.s()?.channel.chatId.trim();
+    if (!chatId) return;
+    this.api.post('/channel/test', { chatId }).subscribe({
+      next: () => this.toasts.success('Тестове повідомлення опубліковано в каналі'),
+      error: (e) => this.toasts.error(errorMessage(e)),
+    });
   }
 
   list(v: string[]) {

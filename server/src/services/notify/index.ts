@@ -1,11 +1,12 @@
 import { config } from '../../config.js';
 import { money, orderStatusLabel, paymentStatusLabel, statusMessage, type OrderStatus, type PaymentStatus } from '../labels.js';
 import { jarLink } from '../monobank.js';
-import { getOrderFull, type OrderRow } from '../orders.js';
+import { getOrderFull, preorderWhenText, type OrderRow } from '../orders.js';
+import { adminOrderCard, adminOrderKeyboard, deliveryLine } from './admin-card.js';
 import { getSettings, type Settings } from '../settings.js';
 import { emailEnabled, sendEmail } from './email.js';
 import { logNotification } from './log.js';
-import { escapeHtml, sendTelegram, telegramEnabled } from './telegram.js';
+import { escapeHtml, sendTelegram, telegramEnabled, type TgKeyboard } from './telegram.js';
 import { sendViber, viberEnabled } from './viber.js';
 import { sendWhatsappTemplate, whatsappEnabled } from './whatsapp.js';
 
@@ -13,10 +14,6 @@ const esc = escapeHtml;
 
 function orderUrl(o: OrderRow): string {
   return `${config.publicUrl}/order/${o.number}?token=${o.access_token}`;
-}
-
-function deliveryLine(o: OrderRow): string {
-  return [o.delivery_name, o.delivery_city, o.delivery_branch, o.delivery_address].filter(Boolean).join(', ');
 }
 
 function absoluteUrl(url: string | null): string {
@@ -57,13 +54,6 @@ function layout(s: Settings, title: string, body: string): string {
   </table></td></tr></table></body></html>`;
 }
 
-/** «очікується ~12 листопада» for a pre-order line. */
-export function preorderWhen(eta: string | null): string {
-  if (!eta) return 'очікується найближчим часом';
-  const d = new Date(`${eta}T12:00:00`);
-  return `очікується ~${d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' })}`;
-}
-
 function itemsTable(o: OrderRow): string {
   const rows = o.items
     .map(
@@ -73,7 +63,7 @@ function itemsTable(o: OrderRow): string {
         }</td>
         <td style="padding:10px 12px;border-bottom:1px solid #f0ebe4;font-size:14px">${esc(i.name)}<br>
           <span style="color:#9a8f82;font-size:12px">${[i.size && `Розмір: ${esc(i.size)}`, i.color && `Колір: ${esc(i.color)}`].filter(Boolean).join(' · ')} · ${i.quantity} шт.</span>${
-            i.preorder_pending ? `<br><span style="color:#8c6d3e;font-size:12px">Передзамовлення · ${esc(preorderWhen(i.preorder_eta))}</span>` : ''
+            i.preorder_pending ? `<br><span style="color:#8c6d3e;font-size:12px">Передзамовлення · ${esc(preorderWhenText(i.preorder_eta))}</span>` : ''
           }</td>
         <td style="padding:10px 0;border-bottom:1px solid #f0ebe4;text-align:right;font-size:14px;white-space:nowrap">${money(i.price * i.quantity)}</td>
       </tr>`,
@@ -86,17 +76,6 @@ function itemsTable(o: OrderRow): string {
       <tr><td style="padding:4px 0;color:#7a7268">Доставка</td><td style="text-align:right">${o.delivery_cost > 0 ? money(o.delivery_cost) : 'за тарифами перевізника'}</td></tr>
       <tr><td style="padding:10px 0 0;font-size:16px"><b>Разом</b></td><td style="padding:10px 0 0;text-align:right;font-size:16px"><b>${money(o.total)}</b></td></tr>
     </table>`;
-}
-
-function adminTelegramText(o: OrderRow): string {
-  const items = o.items
-    .map((i) => `• ${esc(i.name)}${i.size ? ` (${esc(i.size)})` : ''}${i.color ? `, ${esc(i.color)}` : ''} × ${i.quantity} — ${money(i.price * i.quantity)}${i.preorder_pending ? ` ⏳ передзамовлення (${esc(preorderWhen(i.preorder_eta))})` : ''}`)
-    .join('\n');
-  return `🛍 <b>Нове замовлення ${esc(o.number)}</b>\n\n👤 ${esc(o.customer_name)}\n📞 ${esc(o.customer_phone)}${
-    o.customer_email ? `\n✉️ ${esc(o.customer_email)}` : ''
-  }\n💬 Зв'язок: ${esc(o.contact_channel)}\n\n${items}\n\n🚚 ${esc(deliveryLine(o))}\n💳 ${esc(o.payment_name)}${
-    o.promo_code ? `\n🏷 Промокод: ${esc(o.promo_code)} (−${money(o.discount)})` : ''
-  }\n\n<b>Разом: ${money(o.total)}</b>${o.comment ? `\n\n📝 ${esc(o.comment)}` : ''}`;
 }
 
 export async function notifyOrderCreated(orderId: number): Promise<void> {
@@ -135,18 +114,16 @@ export async function notifyOrderCreated(orderId: number): Promise<void> {
     }
   }
 
-  if (telegramEnabled()) {
-    const text = adminTelegramText(o);
-    const buttons = config.publicUrl.startsWith('https://')
-      ? [{ text: 'Відкрити в адмінці', url: `${config.publicUrl}/admin/orders/${o.id}` }]
-      : undefined;
+  if (telegramEnabled() && s.notifications.telegramAdminChatIds.length) {
+    const text = await adminOrderCard(o, '🛍 <b>Нове замовлення ${number}</b>');
+    const keyboard = adminOrderKeyboard(o);
     for (const chatId of s.notifications.telegramAdminChatIds) {
-      tasks.push(logNotification(o.id, 'telegram', chatId, 'new order', () => sendTelegram(chatId, text, buttons)));
+      tasks.push(logNotification(o.id, 'telegram', chatId, 'new order', () => sendTelegram(chatId, text, keyboard)));
     }
   }
 
   if (viberEnabled()) {
-    const text = adminTelegramText(o).replace(/<[^>]+>/g, '');
+    const text = (await adminOrderCard(o, 'Нове замовлення ${number}')).replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
     for (const id of s.notifications.viberAdminIds) {
       tasks.push(logNotification(o.id, 'viber', id, 'new order', () => sendViber(id, text)));
     }
@@ -243,4 +220,11 @@ export async function notifyChatHandoff(sessionId: string, contact: string, mess
 
 export function fireAndForget(p: Promise<unknown>): void {
   p.catch((err) => console.error('[notify]', err));
+}
+
+/** A message to every admin Telegram chat (refused parcels, bot notices). */
+export async function notifyAdminsTelegram(html: string, keyboard?: TgKeyboard): Promise<void> {
+  if (!telegramEnabled()) return;
+  const s = await getSettings();
+  await Promise.allSettled(s.notifications.telegramAdminChatIds.map((chatId) => sendTelegram(chatId, html, keyboard)));
 }

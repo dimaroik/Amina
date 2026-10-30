@@ -79,3 +79,10 @@
 .ttn .del { color: var(--danger); }
 
 .pre-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; } }
+
+.risk { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-lg); font-size: 13px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); app-icon { flex: none; margin-top: 2px; } }
+.cod { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; padding: 8px 10px; border-radius: var(--radius-lg); background: var(--surface-2);
+  &.paid_out { background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
+  &.refused { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+  &.collected { background: color-mix(in srgb, var(--warning) 10%, var(--surface)); } }

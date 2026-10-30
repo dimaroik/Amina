@@ -11,6 +11,7 @@ import { telegramDeepLink } from '../services/notify/telegram.js';
 import { viberDeepLink } from '../services/notify/viber.js';
 import { novaPoshtaEnabled, searchCities, searchWarehouses } from '../services/novaposhta.js';
 import { addHistory, getOrderFull, publicOrder, type OrderRow } from '../services/orders.js';
+import { codAllowed } from '../services/cod.js';
 import { getSettings } from '../services/settings.js';
 import { badRequest, HttpError, notFound } from '../utils/errors.js';
 
@@ -111,6 +112,9 @@ checkoutRouter.post('/orders', orderLimiter, optionalAuth, async (req, res) => {
   if (delivery.type !== 'pickup' && !body.delivery.city) throw badRequest('Вкажіть місто доставки');
   if (delivery.type === 'np_warehouse' && !body.delivery.branch) throw badRequest('Оберіть відділення Нової пошти');
   if ((delivery.type === 'address' || delivery.type === 'np_courier') && !body.delivery.address) throw badRequest('Вкажіть адресу доставки');
+  if (body.paymentMethod === 'cod' && !(await codAllowed(body.customer.phone))) {
+    throw new HttpError(409, 'Для цього номера оплата при отриманні недоступна — оберіть, будь ласка, оплату карткою або на рахунок.', { field: 'payment' });
+  }
 
   const orderId = await tx(async (client) => {
     // Merge duplicate lines, lock variants, verify stock

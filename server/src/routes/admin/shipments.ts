@@ -7,6 +7,8 @@ import { fireAndForget, notifyOrderStatus } from '../../services/notify/index.js
 import { addHistory } from '../../services/orders.js';
 import { badRequest, HttpError, notFound } from '../../utils/errors.js';
 import { productSchema, saveProduct } from './catalog.js';
+import { postProducts, type PostKind } from '../../services/channel.js';
+import { getSettings } from '../../services/settings.js';
 
 export const adminShipmentsRouter = Router();
 
@@ -98,12 +100,18 @@ adminShipmentsRouter.put('/shipments/:id', async (req, res) => {
   if (s.status === 'received') {
     await query('UPDATE shipments SET title=$2, supplier=$3, tracking=$4, note=$5 WHERE id=$1', [id, b.title, b.supplier, b.tracking, b.note]);
   } else {
+    const wasShown = s.preorder_enabled || s.show_incoming;
     await query(
       `UPDATE shipments SET title=$2, supplier=$3, currency=$4, exchange_rate=$5, extra_cost=$6, allocation=$7, tracking=$8, note=$9,
          ordered_at=COALESCE($10::date, ordered_at), expected_at=$11, preorder_enabled=$12, show_incoming=$13 WHERE id=$1`,
       [id, b.title, b.supplier, b.currency, b.exchange_rate, b.extra_cost, b.allocation, b.tracking, b.note, b.ordered_at ?? null, b.expected_at, b.preorder_enabled, b.show_incoming],
     );
     await syncPreorderVisibility(id);
+    const shown = b.preorder_enabled || b.show_incoming;
+    if (!wasShown && shown && (await getSettings()).channel.postOnAnnounce) {
+      const kind: PostKind = b.preorder_enabled ? 'preorder' : 'incoming';
+      fireAndForget(postProducts(await soldOutProducts(id), async () => kind));
+    }
   }
   res.json(await loadShipment(id));
 });
@@ -129,6 +137,17 @@ adminShipmentsRouter.delete('/shipments/:id', async (req, res) => {
 });
 
 // ---------- items ----------
+
+/** Products of the shipment that have nothing in stock right now. */
+async function soldOutProducts(id: number): Promise<number[]> {
+  const rows = await query<{ product_id: number }>(
+    `SELECT DISTINCT si.product_id FROM shipment_items si JOIN products p ON p.id = si.product_id
+     WHERE si.shipment_id = $1 AND p.is_active
+       AND COALESCE((SELECT SUM(stock) FROM product_variants WHERE product_id = p.id), 0) <= 0`,
+    [id],
+  );
+  return rows.map((r) => r.product_id);
+}
 
 async function preorderedFor(shipmentId: number, itemId: number): Promise<number> {
   const row = await one<{ n: number }>(
@@ -230,6 +249,9 @@ adminShipmentsRouter.post('/shipments/:id/receive', async (req, res) => {
   if (!s!.items.length) throw badRequest('У поставці немає товарів');
   const publish = z.object({ publish: z.boolean().default(true) }).parse(req.body ?? {}).publish;
   const waiting = await preorderOrders(id);
+  // for the channel: brand-new products and products that were sold out before this delivery
+  const newIds = new Set(s!.items.filter((i) => i.activate_on_receive && i.product_id).map((i) => i.product_id!));
+  const soldOut = new Set(await soldOutProducts(id));
   await tx(async (client) => {
     // pre-ordered units go straight to their orders instead of the shelf
     const reserved = new Map<number, number>();
@@ -261,6 +283,10 @@ adminShipmentsRouter.post('/shipments/:id/receive', async (req, res) => {
     await client.query("UPDATE shipments SET status = 'received', received_at = now() WHERE id = $1", [id]);
   });
   fireAndForget(processStockAlerts());
+  if (publish && (await getSettings()).channel.postOnReceive) {
+    const ids = [...new Set(s!.items.map((i) => i.product_id).filter((x): x is number => Boolean(x)))];
+    fireAndForget(postProducts(ids, async (pid) => (newIds.has(pid) ? 'new' : soldOut.has(pid) ? 'restock' : null)));
+  }
   const author = req.user!.name || req.user!.email;
   for (const o of waiting) {
     await addHistory(o.id, 'preorder', `Передзамовлення надійшло: поставка «${s!.title}»`, author);
