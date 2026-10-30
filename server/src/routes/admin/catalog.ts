@@ -110,7 +110,7 @@ adminCatalogRouter.delete('/categories/:id', async (req, res) => {
 });
 
 // ---------- products ----------
-const productSchema = z.object({
+export const productSchema = z.object({
   name: z.string().trim().min(1).max(200),
   slug: z.string().trim().max(200).optional(),
   category_id: z.number().int().nullable().default(null),
@@ -137,6 +137,7 @@ const productSchema = z.object({
         sku: z.string().trim().max(60).default(''),
         stock: z.number().int().min(0).default(0),
         price: z.number().min(0).nullable().default(null),
+        cost_price: z.number().min(0).nullable().optional(),
       }),
     )
     .min(1, 'Додайте хоча б один варіант (розмір/колір)'),
@@ -209,7 +210,7 @@ adminCatalogRouter.get('/products/:id', async (req, res) => {
   const [images, variants] = await Promise.all([
     query('SELECT url, alt, color FROM product_images WHERE product_id = $1 ORDER BY sort_order, id', [id]),
     query(
-      `SELECT id, size, color, color_hex, sku, stock, price,
+      `SELECT id, size, color, color_hex, sku, stock, price, cost_price,
          (SELECT COUNT(*) FROM stock_alerts a WHERE a.variant_id = v.id AND a.notified_at IS NULL) AS waiting
        FROM product_variants v WHERE product_id = $1 ORDER BY sort_order, id`,
       [id],
@@ -218,7 +219,7 @@ adminCatalogRouter.get('/products/:id', async (req, res) => {
   res.json({ ...product, images, variants });
 });
 
-async function saveProduct(id: number | null, b: z.infer<typeof productSchema>) {
+export async function saveProduct(id: number | null, b: z.infer<typeof productSchema>) {
   const slug = await uniqueSlug('products', b.slug || b.name, id ?? undefined);
   return tx(async (client) => {
     const params = [b.name, slug, b.category_id, b.sku, b.description, b.composition, b.care, b.price, b.old_price, b.is_active, b.is_featured, b.is_new, b.tags];
@@ -248,13 +249,15 @@ async function saveProduct(id: number | null, b: z.infer<typeof productSchema>) 
     for (const [i, v] of b.variants.entries()) {
       if (v.id) {
         await client.query(
-          'UPDATE product_variants SET size=$3, color=$4, color_hex=$5, sku=$6, stock=$7, price=$8, sort_order=$9 WHERE id=$1 AND product_id=$2',
-          [v.id, productId, v.size, v.color, v.color_hex, v.sku, v.stock, v.price, i],
+          `UPDATE product_variants SET size=$3, color=$4, color_hex=$5, sku=$6, stock=$7, price=$8, sort_order=$9,
+             cost_price = CASE WHEN $10::boolean THEN $11 ELSE cost_price END
+           WHERE id=$1 AND product_id=$2`,
+          [v.id, productId, v.size, v.color, v.color_hex, v.sku, v.stock, v.price, i, v.cost_price !== undefined, v.cost_price ?? null],
         );
       } else {
         await client.query(
-          'INSERT INTO product_variants(product_id, size, color, color_hex, sku, stock, price, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-          [productId, v.size, v.color, v.color_hex, v.sku, v.stock, v.price, i],
+          'INSERT INTO product_variants(product_id, size, color, color_hex, sku, stock, price, sort_order, cost_price) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+          [productId, v.size, v.color, v.color_hex, v.sku, v.stock, v.price, i, v.cost_price ?? null],
         );
       }
     }
@@ -280,7 +283,7 @@ adminCatalogRouter.post('/products/:id/duplicate', async (req, res) => {
   if (!p) throw notFound('Товар не знайдено');
   const [images, variants] = await Promise.all([
     query('SELECT url, alt, color FROM product_images WHERE product_id = $1 ORDER BY sort_order, id', [id]),
-    query('SELECT size, color, color_hex, sku, stock, price FROM product_variants WHERE product_id = $1 ORDER BY sort_order, id', [id]),
+    query('SELECT size, color, color_hex, sku, stock, price, cost_price FROM product_variants WHERE product_id = $1 ORDER BY sort_order, id', [id]),
   ]);
   const newId = await saveProduct(null, productSchema.parse({ ...p, name: `${p.name} (копія)`, slug: undefined, is_active: false, images, variants }));
   res.status(201).json({ id: newId });

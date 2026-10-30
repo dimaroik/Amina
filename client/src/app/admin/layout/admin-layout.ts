@@ -120,6 +120,7 @@ export class AdminLayout implements OnInit, OnDestroy {
     ],
     [
       { path: '/admin/products', label: 'Товари', icon: 'tag' },
+      { path: '/admin/shipments', label: 'Поставки', icon: 'parcel' },
       { path: '/admin/categories', label: 'Категорії', icon: 'layers' },
       { path: '/admin/promo', label: 'Промокоди', icon: 'sparkle' },
       { path: '/admin/content', label: 'Контент', icon: 'image' },

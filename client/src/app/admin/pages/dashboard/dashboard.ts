@@ -43,12 +43,19 @@ const PAD = { t: 16, r: 8, b: 26, l: 8 };
           <div class="adm-card adm-kpi">
             <div class="k"><app-icon name="tag" [size]="15" /> Середній чек</div>
             <div class="v">{{ round(d.totals.avg_check) | uah }}</div>
-            <div class="d flat">за {{ d.days }} днів</div>
+            <div class="d flat">{{ d.totals.customers }} клієнтів за {{ d.days }} днів</div>
           </div>
           <div class="adm-card adm-kpi">
-            <div class="k"><app-icon name="users" [size]="15" /> Клієнти</div>
-            <div class="v">{{ d.totals.customers }}</div>
-            <div class="d flat">унікальних телефонів</div>
+            <div class="k"><app-icon name="parcel" [size]="15" /> Валовий прибуток</div>
+            @if (d.profit && d.profit.covered_revenue > 0) {
+              <div class="v">{{ round(d.profit.gross) | uah }}</div>
+              <div class="d flat" [title]="'Враховано лише товари з відомою собівартістю (з поставок або вказаною вручну)'">
+                маржа {{ round(d.profit.gross / d.profit.covered_revenue * 100) }}%@if (d.profit.covered_revenue < d.profit.items_revenue) { · по {{ round(d.profit.covered_revenue / d.profit.items_revenue * 100) }}% продажів }
+              </div>
+            } @else {
+              <div class="v">—</div>
+              <div class="d flat">додайте поставки, щоб бачити прибуток</div>
+            }
           </div>
         </div>
 
