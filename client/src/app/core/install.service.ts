@@ -36,19 +36,22 @@ export class Install {
     typeof navigator !== 'undefined' &&
     (/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
   private touch = typeof window !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  /** the «Add to Home Screen» steps for iPhone */
+  /** the «Add to Home Screen» steps (iPhone, or «open in the browser first» inside an app) */
   readonly iosHelp = signal(false);
   private dismissedAt = signal(storage.get<number>(DISMISSED, 0));
   private ordered = signal(storage.get<boolean>(ORDERED, false));
-  /** Instagram / Facebook / Telegram in-app browsers cannot install anything */
-  private inApp = typeof navigator !== 'undefined' && /Instagram|FBAN|FBAV|FB_IAB|Telegram|Line\//i.test(navigator.userAgent);
+  /** Instagram / Facebook / Telegram in-app browsers cannot install anything — the site has to be opened in Safari/Chrome first */
+  readonly inApp =
+    typeof window !== 'undefined' &&
+    ('TelegramWebviewProxy' in window || /Instagram|FBAN|FBAV|FB_IAB|Telegram|Line\/|; wv\)/i.test(navigator.userAgent));
 
   /** a menu item / button makes sense */
-  readonly canInstall = computed(() => !this.standalone() && !this.inApp && (!!this.offer() || this.ios));
+  readonly canInstall = computed(() => !this.standalone() && (!!this.offer() || this.ios || this.inApp));
   /** the unprompted banner: phones only, from the second visit or after an order, not again for two weeks after «Не зараз» */
   readonly suggest = computed(
     () =>
       this.canInstall() &&
+      !this.inApp &&
       this.touch &&
       Date.now() - this.dismissedAt() > QUIET_DAYS * 86_400_000 &&
       (storage.get<number>(VISITS, 0) >= 2 || this.ordered()),
@@ -98,7 +101,7 @@ export class Install {
       this.offer.set(null);
       window.__installPrompt = undefined;
       if (outcome === 'dismissed') this.dismiss();
-    } else if (this.ios) {
+    } else if (this.ios || this.inApp) {
       this.iosHelp.set(true);
     }
   }
