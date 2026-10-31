@@ -15,11 +15,22 @@ import { Icon } from './icon';
         <button class="icon-btn close" (click)="install.iosHelp.set(false)" aria-label="Закрити"><app-icon name="close" /></button>
         <img src="/icons/icon-192.png" alt="" width="64" height="64" class="app-icon" />
         <p class="title">Додайте AMINA на головний екран</p>
+        @if (install.inApp) {
+          <ol>
+            <li><span class="n">1</span><span>Цей вбудований браузер не вміє встановлювати сайти. Натисніть <b>{{ install.ios ? '⋯' : '⋮' }}</b> угорі справа → <b>«Відкрити в {{ install.ios ? 'Safari' : 'браузері' }}»</b></span></li>
+            @if (install.ios) {
+              <li><span class="n">2</span><span>У Safari натисніть <b>«Поділитися»</b> <app-icon name="share-ios" [size]="18" /> → <b>«На початковий екран»</b> <app-icon name="add-square" [size]="18" /> → <b>«Додати»</b></span></li>
+            } @else {
+              <li><span class="n">2</span><span>У Chrome натисніть <b>⋮</b> → <b>«Встановити застосунок»</b> або <b>«Додати на головний екран»</b></span></li>
+            }
+          </ol>
+        } @else {
         <ol>
           <li><span class="n">1</span><span>Натисніть <b>«Поділитися»</b> <app-icon name="share-ios" [size]="18" /> — внизу екрана Safari (або вгорі, біля адреси)</span></li>
           <li><span class="n">2</span><span>Прогорніть меню й виберіть <b>«На початковий екран»</b> <app-icon name="add-square" [size]="18" /></span></li>
           <li><span class="n">3</span><span>Натисніть <b>«Додати»</b> — іконка з’явиться серед ваших застосунків</span></li>
         </ol>
+        }
         <button class="btn btn-block" (click)="install.iosHelp.set(false)">Зрозуміло</button>
       </div>
     }
