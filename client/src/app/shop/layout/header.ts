@@ -4,6 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { Auth } from '../../core/auth.service';
 import { Cart } from '../../core/cart.service';
+import { Install } from '../../core/install.service';
 import type { Category } from '../../core/models';
 import { Store } from '../../core/store.service';
 import { Wishlist } from '../../core/wishlist.service';
@@ -110,6 +111,9 @@ import { Icon } from '../../shared/icon';
           <a routerLink="/track"><app-icon name="truck" [size]="18" /> Відстежити замовлення</a>
           <a routerLink="/delivery"><app-icon name="card" [size]="18" /> Доставка й оплата</a>
           <a routerLink="/contacts"><app-icon name="phone" [size]="18" /> Контакти</a>
+          @if (install.canInstall()) {
+            <button class="m-install" (click)="mobileOpen.set(false); install.install()"><app-icon name="smartphone" [size]="18" /> Встановити застосунок</button>
+          }
         </div>
       </div>
     </aside>
@@ -157,13 +161,15 @@ import { Icon } from '../../shared/icon';
     .m-sublink { padding: 7px 0; color: var(--ink-2); font-size: 15px; }
     .m-sublink.deep { padding-left: 14px; font-size: 14px; color: var(--muted); }
     .m-secondary { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-    .m-secondary a { display: flex; align-items: center; gap: 12px; padding: 10px 0; font-size: 14px; }
+    .m-secondary a, .m-install { display: flex; align-items: center; gap: 12px; padding: 10px 0; font-size: 14px; }
+    .m-install { border: 0; background: none; color: inherit; font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
   `,
 })
 export class Header {
   protected auth = inject(Auth);
   protected cart = inject(Cart);
   protected wishlist = inject(Wishlist);
+  protected install = inject(Install);
   private store = inject(Store);
   private router = inject(Router);
   readonly search = output<void>();

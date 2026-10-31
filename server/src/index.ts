@@ -73,7 +73,8 @@ export function createApp() {
 
   if (fs.existsSync(clientDir)) {
     app.use(express.static(clientDir, { index: false, maxAge: '1y', setHeaders: (res, file) => {
-      if (file.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      // the service worker and app manifests must be re-checked on every visit, or updates never reach installed apps
+      if (/\.html$|\.webmanifest$|[\\/]sw\.js$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
     } }));
     app.get(/.*/, (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache');

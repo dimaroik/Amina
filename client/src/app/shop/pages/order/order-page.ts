@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Analytics } from '../../../core/analytics.service';
 import { Api, errorMessage } from '../../../core/api.service';
+import { Install } from '../../../core/install.service';
 import type { OrderResponse } from '../../../core/models';
 import { Icon } from '../../../shared/icon';
 import { OrderDetails } from './order-details';
@@ -34,6 +35,13 @@ import { OrderDetails } from './order-details';
             <h1 class="h1">Замовлення {{ data()!.order.number }}</h1>
           }
         </div>
+        @if (fresh() && install.canInstall()) {
+          <div class="install">
+            <img src="/icons/icon-192.png" alt="" width="48" height="48" />
+            <div class="grow"><b>Стежте за замовленням з головного екрана</b><span>Встановіть AMINA на телефон — магазин і статус замовлення в один дотик.</span></div>
+            <button class="btn btn-sm" (click)="install.install()">Встановити</button>
+          </div>
+        }
         <app-order-details [data]="data()!" (refresh)="load(true)" />
         <div class="actions">
           <a class="btn btn-outline" routerLink="/catalog">Продовжити покупки</a>
@@ -46,6 +54,11 @@ import { OrderDetails } from './order-details';
     .loading { display: grid; place-items: center; min-height: 40vh; }
     .hero { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 40px; p { max-width: 560px; margin: 0; } }
     .ink { color: var(--ink); }
+    .install { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin: -16px 0 32px; background: var(--surface-2); border-radius: var(--radius-lg); }
+    .install img { border-radius: 11px; flex: none; }
+    .install .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+    .install .grow span { color: var(--muted); font-size: 12.5px; }
+    @media (max-width: 599px) { .install { flex-wrap: wrap; } .install .btn { width: 100%; } }
     .check { width: 64px; height: 64px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; animation: pop .6s var(--ease); margin-bottom: 8px; }
     @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.08); } }
     .empty-state app-icon { margin: 0 auto 16px; }
@@ -59,6 +72,7 @@ export class OrderPage {
 
   private api = inject(Api);
   private analytics = inject(Analytics);
+  protected install = inject(Install);
   protected data = signal<OrderResponse | null>(null);
   protected error = signal('');
   protected fresh = signal(false);
@@ -75,6 +89,7 @@ export class OrderPage {
         if (cached?.order.number === number) {
           this.data.set(cached);
           this.fresh.set(true);
+          this.install.markOrdered();
           // only the page reached right after checkout reports the purchase
           const o = cached.order;
           this.analytics.purchase(o.number, o.total, o.items.map((i) => ({ id: i.product_id ?? i.name, name: i.name, price: i.price, quantity: i.quantity, variant: [i.color, i.size].filter(Boolean).join(' / ') })), o.delivery_cost);

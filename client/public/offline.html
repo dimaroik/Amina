@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf8f5">
+  <title>AMINA — немає з’єднання</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; place-items: center; background: #faf8f5; color: #1f1d1a; font-family: Manrope, -apple-system, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
+    .logo { font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif; font-size: 34px; letter-spacing: .3em; margin-right: -.3em; }
+    .line { width: 48px; height: 1px; background: #c9bfb2; margin: 22px auto; }
+    h1 { font-weight: 500; font-size: 18px; margin: 0 0 8px; }
+    p { margin: 0 0 28px; color: #6f675e; font-size: 14px; line-height: 1.6; max-width: 300px; }
+    button { border: 0; background: #1f1d1a; color: #faf8f5; padding: 14px 28px; font: inherit; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="logo">AMINA</div>
+    <div class="line"></div>
+    <h1>Немає з’єднання з інтернетом</h1>
+    <p>Перевірте Wi-Fi або мобільний інтернет — і ми одразу покажемо магазин.</p>
+    <button onclick="location.reload()">Спробувати ще раз</button>
+  </main>
+  <script>addEventListener('online', () => location.reload());</script>
+</body>
+</html>

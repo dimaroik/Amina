@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../../core/auth.service';
+import { Install } from '../../core/install.service';
 import { Icon } from '../../shared/icon';
+import { InstallSheet } from '../../shared/install-sheet';
 import { AdminApi } from '../admin-api';
 import { ConfirmHost } from '../ui/confirm';
 
@@ -16,7 +18,7 @@ interface NavItem {
 @Component({
   selector: 'app-admin-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, ConfirmHost],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, ConfirmHost, InstallSheet],
   template: `
     <div class="admin-shell">
       <aside class="adm-sidebar" [class.open]="menuOpen()">
@@ -40,6 +42,9 @@ interface NavItem {
             </div>
           }
         </nav>
+        @if (install.canInstall()) {
+          <button class="nav-link install" (click)="install.install()"><app-icon name="smartphone" [size]="18" /><span>Встановити на телефон</span></button>
+        }
         <div class="me">
           <div class="avatar">{{ initials() }}</div>
           <div class="who">
@@ -66,6 +71,7 @@ interface NavItem {
         <router-outlet />
       </div>
       <adm-confirm-host />
+      <app-install-sheet />
     </div>
   `,
   styles: `
@@ -80,6 +86,7 @@ interface NavItem {
     .nav-link { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; color: var(--ink-2); font-size: 13.5px; transition: background .15s, color .15s; }
     .nav-link:hover { background: var(--surface-2); color: var(--ink); }
     .nav-link.active { background: var(--ink); color: var(--bg); }
+    .nav-link.install { border: 0; background: none; font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; margin: 0 0 8px; width: 100%; }
     .nav-link span:not(.badge-count) { flex: 1; }
     .badge-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--sale); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
     .me { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
@@ -105,6 +112,7 @@ interface NavItem {
 })
 export class AdminLayout implements OnInit, OnDestroy {
   protected auth = inject(Auth);
+  protected install = inject(Install);
   protected api = inject(AdminApi);
   private router = inject(Router);
   protected menuOpen = signal(false);
